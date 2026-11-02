@@ -1,0 +1,36 @@
+# Runner check: CPU model, free disk before and after removing unneeded toolchains, and the hashes of glibc
+# 2.41's libmvec functions (Debian 13 container) against the Intel reference machine's.
+name: probe
+on: workflow_dispatch
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        n: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+    steps:
+      - uses: actions/checkout@v4
+      - name: cpu
+        run: |
+          lscpu | grep -E "Model name|Vendor ID|^CPU\(s\)|Thread|Flags" | cut -c1-200
+          free -g
+      - name: disk before
+        run: df -h / /mnt
+      - name: remove unneeded toolchains
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache \
+            /usr/local/share/boost /usr/share/swift /usr/local/julia* /usr/local/share/powershell /usr/local/share/chromium
+          sudo docker image prune -af > /dev/null
+          df -h / /mnt
+      - name: libmvec hashes (Debian 13, glibc 2.41)
+        run: |
+          docker run --rm -v "$PWD/probe:/p:ro" debian:13 bash -c \
+            "apt-get -qq update > /dev/null && apt-get -qq install -y python3 > /dev/null && python3 -I /p/mvec_probe.py" | tee hashes.txt
+          ref="_ZGVbN2v_log 2ca5f3a0f57411e8
+          _ZGVbN2v_exp cc5c60914ba2c454
+          _ZGVbN2v_sin e5b422444310cd53
+          _ZGVbN2v_cos dbee7d7a2548485a
+          _ZGVbN2v_atan 2d7c20b3595dc670
+          _ZGVbN2vv_pow 5cff648928ee7bc1"
+          if diff <(grep ^_ZGV hashes.txt) <(sed 's/^ *//' <<< "$ref"); then echo "AS_INTEL_REFERENCE yes"; else echo "AS_INTEL_REFERENCE no"; fi
