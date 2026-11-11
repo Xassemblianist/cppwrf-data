@@ -90,7 +90,7 @@ jobs:
           export DEBIAN_FRONTEND=noninteractive
           apt-get -qq update > /dev/null && apt-get -qq install -y curl ca-certificates libnetcdf22 libnetcdff7 libgfortran5 python3-netcdf4 python3-numpy > /dev/null
           mkdir -p /w/out; : > /w/out/setup.out
-          LOG=/w/out/data.txt SETUP=/w/out/setup.out PARTS=/w/parts bash /w/ci/ci/fetch_data.sh /w/data "$DATA"
+          [ -z "$DATA" ] || LOG=/w/out/data.txt SETUP=/w/out/setup.out PARTS=/w/parts bash /w/ci/ci/fetch_data.sh /w/data "$DATA"
           for fl in r8 r8d8; do [ -e /w/wrf/WRF-4.8.0-$fl/main/wrf.exe ] && ln -sfn /w/wrf/WRF-4.8.0-$fl/main/wrf.exe /w/wrf/wrf_$fl.exe; done
           W=/w/wrf_runs; mkdir -p $W
           if [ -s /w/refs.txt ]; then
@@ -111,7 +111,7 @@ jobs:
           EOF
           docker run --rm -v "$GITHUB_WORKSPACE:/w" -e DATA -e DATA_TAG -e DATA_REPO debian:13 bash /w/job.sh
           sudo chown -R "$(id -u)" .
-          cat out/setup.out out/data.txt; cat out/refs.out 2>/dev/null; cat out/rerun.log 2>/dev/null
+          cat out/setup.out out/data.txt 2>/dev/null; cat out/refs.out 2>/dev/null; cat out/rerun.log 2>/dev/null
       - name: assets
         env: {TAG: "${{ inputs.tag }}"}
         run: |
