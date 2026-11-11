@@ -30,6 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 150
     strategy:
+      fail-fast: false
       matrix:
         flavor: [r8, r8d8]
     steps:
