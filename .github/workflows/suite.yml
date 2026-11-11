@@ -58,7 +58,7 @@ jobs:
           git -C src checkout -q --detach "$REF"
           echo "commit=$(git -C src rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           git -C src log -1 --format='%H %s' | tee commit.txt
-          git -C src archive --format=tar.gz -o src.tar.gz HEAD
+          git -C src archive --format=tar.gz -o "$PWD/src.tar.gz" HEAD
       - name: plan
         id: plan
         env: {CASES: "${{ inputs.cases }}", FULL: "${{ inputs.full }}", DATA: "${{ inputs.data }}", SLOW: "${{ inputs.slow }}",
