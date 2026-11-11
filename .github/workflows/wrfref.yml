@@ -113,7 +113,7 @@ jobs:
           EOF
           docker run --rm -v "$GITHUB_WORKSPACE:/w" -e DATA -e DATA_TAG -e DATA_REPO debian:13 bash /w/job.sh
           sudo chown -R "$(id -u)" .
-          cat out/setup.out out/data.txt 2>/dev/null; cat out/refs.out 2>/dev/null; cat out/rerun.log 2>/dev/null
+          cat out/setup.out out/data.txt out/refs.out out/rerun.log 2>/dev/null || true
       - name: assets
         env: {TAG: "${{ inputs.tag }}"}
         run: |
