@@ -173,7 +173,11 @@ if full:
                      "tars": ",".join(forced or tars_for_dirs(g["dirs"]))})
     ideal = [c[0] for c in w.CASES if c[0].startswith("ideal_") and c[1] == "cpu_dp"]
     jobs.append({"name": "idealfiles", "kind": "idealfiles", "cases": "", "tars": ",".join(data_of(ideal))})
-    jobs.append({"name": "diff", "kind": "diff", "cases": "", "tars": ",".join(forced or [t for t in vm if "diff" in t])})
+    # the differential tests: WRF's build objects come from the wrf-build release (ci/wrf_build.sh, as the references'
+    # builds; diff_data.tar holds the reference machine's and is not published), the runs they read from the suite data
+    ddirs = {f"wrf_runs/{d}" for d in ("run_R0_r8", "run_P4_r8", "run_P7_r8", "run_P8_r8", "wrf_run")}
+    dt = [t for t in vm if "diff" in t and t != "diff_data.tar"] + tars_for_dirs(ddirs)
+    jobs.append({"name": "diff", "kind": "diff", "cases": "", "tars": ",".join(forced or ordered(dt))})
 # always (suite_body.sh runs them with every suite): the translator tests read the namelists of these run directories; the comparators' self-test needs no data
 tt = open(os.path.join(a.src, "tests", "tools", "test_wrf2cppwrf.py")).read()
 dirs = {f"wrf_runs/{m}" for m in re.findall(r'wrf_runs_path\(\s*"([^"/]+)/', tt)}
