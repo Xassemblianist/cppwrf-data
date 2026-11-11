@@ -1,0 +1,132 @@
+# WRF v4.8.0 reference runs on GitHub-hosted runners (the work of CPPWRF's tools/colab/colab_wrfref.sh and
+# tools/gcp/gcp_wrfref.sh): WRF built as the references were (ci/wrf_build.sh; each build is kept as an asset of the
+# `wrf-build` release, keyed by the build script's hash, and built only when missing), then
+#  - refs: lines "NAME BASE_RUN FLAVOR section.key=value ..." (FLAVOR r8 or r8d8; BASE_RUN a directory of the data,
+#    e.g. wrf_runs/run_P1_r8) run by CPPWRF's tools/gcp/wrf_ref_run.py (run_NAME and run_NAME/steps) and
+#    tests/verify/make_restart_refs.sh / make_resumed_refs.sh; the directories come back as the asset
+#    TAG-refs.tar.partNNN of the `wrfref` release (with TAG-refs_md5.txt, the MD5 of every WRF output file);
+#  - rerun: "DIR:FLAVOR ..." WRF again in copies of reference directories of the data, every output file's MD5
+#    against the reference's (ci/wrf_rerun.sh: the build reproduces the references byte for byte).
+name: wrfref
+run-name: ${{ inputs.tag }}
+on:
+  workflow_dispatch:
+    inputs:
+      refs: {description: "reference lines (newline- or ';'-separated)", default: ""}
+      rerun: {description: "DIR:FLAVOR ... to run again and compare", default: ""}
+      data: {description: "data tars (comma-separated, in vm_data.txt order)", default: "suite_data.tar"}
+      data_tag: {description: "release of Xassemblianist/cppwrf-data", default: "data-v1"}
+      src_ref: {description: "CPPWRF commit whose tools run the references", default: main}
+      flavors: {description: "WRF builds to make or fetch", default: "r8 r8d8"}
+      tag: {description: "a name for the run and its assets", required: true}
+permissions:
+  contents: write
+env:
+  CI_REPO: Xassemblianist/cppwrf-data
+  DATA_REPO: Xassemblianist/cppwrf-data
+  GH_TOKEN: ${{ github.token }}
+jobs:
+  wrf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      matrix:
+        flavor: [r8, r8d8]
+    steps:
+      - uses: actions/checkout@v4
+        with: {path: ci}
+      - name: build or fetch
+        if: contains(inputs.flavors, matrix.flavor)
+        env: {FL: "${{ matrix.flavor }}"}
+        run: |
+          key=$(sha256sum ci/ci/wrf_build.sh | cut -c1-12)
+          name=wrf-4.8.0-$FL-$key.tar.zst
+          gh release view wrf-build -R "$CI_REPO" > /dev/null 2>&1 ||
+            gh release create wrf-build -R "$CI_REPO" --title wrf-build --notes "WRF v4.8.0 builds of ci/wrf_build.sh (the tree after ./compile em_real)"
+          if gh release view wrf-build -R "$CI_REPO" --json assets --jq '.assets[].name' | grep -qx "$name"; then
+            echo "$name exists"; exit 0
+          fi
+          docker run --rm -v "$GITHUB_WORKSPACE:/w" debian:13 bash -c \
+            "bash /w/ci/ci/wrf_build.sh $FL /w/wrf/WRF-4.8.0-$FL > /w/build_$FL.log 2>&1; cd /w/wrf && tar cf - WRF-4.8.0-$FL | zstd -q -T0 -10 -o /w/$name"
+          tail -20 build_$FL.log; tail -30 wrf/WRF-4.8.0-$FL/compile.log
+          sudo chown -R "$(id -u)" .
+          test -x wrf/WRF-4.8.0-$FL/main/wrf.exe
+          ls -la "$name"
+          gh release upload wrf-build "$name" -R "$CI_REPO"
+          mkdir -p out && cp build_$FL.log wrf/WRF-4.8.0-$FL/configure.wrf wrf/WRF-4.8.0-$FL/compile.log out/ 2>/dev/null
+          mv out/configure.wrf out/configure_$FL.wrf; mv out/compile.log out/compile_$FL.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: "build-${{ matrix.flavor }}", path: out/, retention-days: 30, if-no-files-found: ignore}
+
+  run:
+    needs: wrf
+    runs-on: ubuntu-latest
+    timeout-minutes: 345
+    steps:
+      - name: free disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache \
+            /usr/local/share/boost /usr/share/swift /usr/local/julia* /usr/local/share/powershell /usr/local/share/chromium
+          df -h /
+      - uses: actions/checkout@v4
+        with: {path: ci}
+      - name: inputs
+        env: {REFS: "${{ inputs.refs }}", RERUN: "${{ inputs.rerun }}", SRC: "${{ inputs.src_ref }}", FLS: "${{ inputs.flavors }}"}
+        run: |
+          printf '%s\n' "$REFS" | tr ';' '\n' | sed 's/^ *//' | grep -v '^\s*$' > refs.txt || true
+          echo "$RERUN" > rerun.txt; cat refs.txt rerun.txt
+          git clone -q https://github.com/Xassemblianist/CPPWRF src && git -C src checkout -q --detach "$SRC"
+          key=$(sha256sum ci/ci/wrf_build.sh | cut -c1-12); mkdir -p wrf
+          for fl in $FLS; do
+            gh release download wrf-build -R "$CI_REPO" -p "wrf-4.8.0-$fl-$key.tar.zst" -O - | zstd -dq | tar xf - -C wrf
+          done
+          ls wrf
+      - name: WRF runs (Debian 13 container)
+        env: {DATA: "${{ inputs.data }}", DATA_TAG: "${{ inputs.data_tag }}"}
+        run: |
+          cat > job.sh <<'EOF'
+          set -uo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get -qq update > /dev/null && apt-get -qq install -y curl ca-certificates libnetcdf22 libnetcdff7 libgfortran5 python3-netcdf4 python3-numpy > /dev/null
+          mkdir -p /w/out; : > /w/out/setup.out
+          LOG=/w/out/data.txt SETUP=/w/out/setup.out PARTS=/w/parts bash /w/ci/ci/fetch_data.sh /w/data "$DATA"
+          for fl in r8 r8d8; do [ -e /w/wrf/WRF-4.8.0-$fl/main/wrf.exe ] && ln -sfn /w/wrf/WRF-4.8.0-$fl/main/wrf.exe /w/wrf/wrf_$fl.exe; done
+          W=/w/wrf_runs; mkdir -p $W
+          if [ -s /w/refs.txt ]; then
+            while read -r name base fl sets; do
+              echo "python3 /w/src/tools/gcp/wrf_ref_run.py /w/data $W /w/wrf/wrf_$fl.exe $name $base $sets"
+            done < /w/refs.txt > /w/out/cmds.txt
+            xargs -P "$(nproc)" -I{} sh -c '{}' < /w/out/cmds.txt > /w/out/refs.out 2>&1
+            names=$(awk 'NF {print $1}' /w/refs.txt)
+            { CPPWRF_WRF_RUNS=$W bash /w/src/tests/verify/make_restart_refs.sh $names
+              CPPWRF_WRF_RUNS=$W bash /w/src/tests/verify/make_resumed_refs.sh $names; } >> /w/out/refs.out 2>&1
+            dirs=$(for n in $names; do for p in run rst rsm; do [ -d "$W/${p}_$n" ] && echo "${p}_$n"; done; done)
+            ( cd $W && find $dirs -type f \( -name 'wrfout_*' -o -name 'wrfrst_*' -o -name 'auxhist*' -o -name 'wrfinput_*' \
+                -o -name 'wrfbdy_*' -o -name 'wrflowinp_*' -o -name 'wrffdda_*' \) | sort | xargs -r md5sum | awk '{print "MD5", $2, $1}' ) > /w/out/refs_md5.txt
+            mkdir -p /w/fetch && tar cf - -C $W $dirs | split -b 1900M -d -a 3 - /w/fetch/refs.tar.part
+          fi
+          [ -z "$(cat /w/rerun.txt)" ] || bash /w/ci/ci/wrf_rerun.sh /w/data /w/out $(cat /w/rerun.txt)
+          true
+          EOF
+          docker run --rm -v "$GITHUB_WORKSPACE:/w" -e DATA -e DATA_TAG -e DATA_REPO debian:13 bash /w/job.sh
+          sudo chown -R "$(id -u)" .
+          cat out/setup.out out/data.txt; cat out/refs.out 2>/dev/null; cat out/rerun.log 2>/dev/null
+      - name: assets
+        env: {TAG: "${{ inputs.tag }}"}
+        run: |
+          gh release view wrfref -R "$CI_REPO" > /dev/null 2>&1 ||
+            gh release create wrfref -R "$CI_REPO" --title wrfref --notes "WRF reference runs of the wrfref workflow"
+          for f in fetch/refs.tar.part*; do
+            [ -e "$f" ] || continue
+            cp "$f" "$TAG-$(basename "$f")" && gh release upload wrfref "$TAG-$(basename "$f")" -R "$CI_REPO" --clobber && rm "$TAG-$(basename "$f")"
+          done
+          [ -f out/refs_md5.txt ] && cp out/refs_md5.txt "$TAG-refs_md5.txt" && gh release upload wrfref "$TAG-refs_md5.txt" -R "$CI_REPO" --clobber
+          bad=0
+          grep . out/setup.out && bad=1
+          [ ! -f out/rerun.log ] || grep -qx "exit 0" out/rerun.log || bad=1
+          [ ! -f out/refs.out ] || ! grep -qE "FAILED" out/refs.out || bad=1
+          exit $bad
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: wrfref-logs, path: "out/", retention-days: 30}

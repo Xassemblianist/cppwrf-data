@@ -1,0 +1,191 @@
+# The CPPWRF CPU FP64 suite on GitHub-hosted runners: what tools/colab/colab_suite.sh ran on a Colab runtime
+# (wrf_suite.py's CPU cases, the output files tests, the ideal files test, the differential and ctest tests, the
+# translator tests and the comparators' self-test), in the Debian 13 container of the reference machines.
+# Started by CPPWRF's tools/ci/ci_submit.sh (workflow_dispatch: a commit of the public repository or a git bundle of
+# an unpushed one, from this repository's `jobs` release) and by pushes to CPPWRF's main (workflow_call).
+name: suite
+run-name: ${{ inputs.tag || format('suite {0}', inputs.ref) }}
+on:
+  workflow_dispatch:
+    inputs:
+      ref: {description: "CPPWRF commit (sha) to test", required: true, default: main}
+      bundle: {description: "asset of the jobs release holding the commit (git bundle); empty: the public repository", default: ""}
+      cases: {description: "suite cases (exact names, comma-separated); empty: the full suite", default: ""}
+      full: {description: "with cases: also the files, ideal files, diff, ctest, translator jobs (1)", default: "0"}
+      data: {description: "data tars instead of the cases' own (comma-separated)", default: ""}
+      slow: {description: "also the slow cases (1)", default: "0"}
+      suite_jobs: {description: "number of suite jobs", default: "13"}
+      data_tag: {description: "release of Xassemblianist/cppwrf-data with the tars", default: "data-v1"}
+      tag: {description: "a name for the run (ci_submit.sh finds the run by it)", default: ""}
+  workflow_call:
+    inputs:
+      ref: {type: string, required: true}
+      bundle: {type: string, default: ""}
+      cases: {type: string, default: ""}
+      full: {type: string, default: "0"}
+      data: {type: string, default: ""}
+      slow: {type: string, default: "0"}
+      suite_jobs: {type: string, default: "13"}
+      data_tag: {type: string, default: "data-v1"}
+      tag: {type: string, default: ""}
+permissions:
+  contents: read
+env:
+  CI_REPO: Xassemblianist/cppwrf-data
+  SRC_REPO: Xassemblianist/CPPWRF
+  DATA_REPO: Xassemblianist/cppwrf-data
+jobs:
+  prep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      image: ${{ steps.image.outputs.image }}
+      commit: ${{ steps.src.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with: {repository: "${{ env.CI_REPO }}", path: ci}
+      - name: source
+        id: src
+        env: {REF: "${{ inputs.ref }}", BUNDLE: "${{ inputs.bundle }}"}
+        run: |
+          git clone -q "https://github.com/$SRC_REPO" src
+          if [ -n "$BUNDLE" ]; then
+            curl -fsSL --retry 5 -o job.bundle "https://github.com/$CI_REPO/releases/download/jobs/$BUNDLE"
+            git -C src bundle verify ../job.bundle
+            git -C src fetch -q ../job.bundle "refs/heads/ci:refs/heads/ci-under-test"
+          fi
+          git -C src checkout -q --detach "$REF"
+          echo "commit=$(git -C src rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          git -C src log -1 --format='%H %s' | tee commit.txt
+          git -C src archive --format=tar.gz -o src.tar.gz HEAD
+      - name: plan
+        id: plan
+        env: {CASES: "${{ inputs.cases }}", FULL: "${{ inputs.full }}", DATA: "${{ inputs.data }}", SLOW: "${{ inputs.slow }}",
+              NJ: "${{ inputs.suite_jobs }}", TAG: "${{ inputs.data_tag }}"}
+        run: |
+          base=https://github.com/$DATA_REPO/releases/download/$TAG
+          curl -fsSL --retry 5 -o TARS.txt "$base/TARS.txt" || : > TARS.txt
+          curl -fsSL --retry 5 "$base/INDEX.tsv.gz" | gunzip > INDEX.tsv || : > INDEX.tsv
+          args=(--suite-jobs "$NJ" --tars TARS.txt --times ci/ci/times.txt)
+          [ -s INDEX.tsv ] && args+=(--index INDEX.tsv)
+          [ -n "$CASES" ] && args+=(--cases "$CASES")
+          [ "$FULL" = 1 ] && args+=(--full)
+          [ -n "$DATA" ] && args+=(--data "$DATA")
+          [ "$SLOW" = 1 ] && args+=(--slow)
+          python3 ci/ci/plan.py src plan "${args[@]}"
+          cp commit.txt plan/
+          echo "matrix=$(cat plan/matrix.json)" >> "$GITHUB_OUTPUT"
+      - name: image
+        id: image
+        run: |
+          docker pull -q debian:13 > /dev/null
+          echo "image=$(docker inspect --format '{{index .RepoDigests 0}}' debian:13)" | tee -a "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with: {name: prep, path: "src.tar.gz\nplan/", retention-days: 7}
+
+  build:
+    needs: prep
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with: {repository: "${{ env.CI_REPO }}", path: ci}
+      - uses: actions/download-artifact@v4
+        with: {name: prep}
+      - run: mkdir -p src && tar xzf src.tar.gz -C src
+      - uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-cpu-${{ needs.prep.outputs.commit }}
+          restore-keys: ccache-cpu-
+      - name: build (Debian 13 container)
+        run: docker run --rm -v "$GITHUB_WORKSPACE:/w" "${{ needs.prep.outputs.image }}" bash /w/ci/ci/job.sh build
+      - run: sudo chown -R "$(id -u)" . ; cat out/setup.out out/versions.txt; tail -3 out/cmake.log
+        if: always()
+      - uses: actions/upload-artifact@v4
+        with: {name: build, path: build/cppwrf, retention-days: 7, if-no-files-found: error}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: logs-build, path: "out/*.log\nout/*.out\nout/*.txt", retention-days: 30}
+
+  work:
+    needs: [prep, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 345
+    strategy:
+      fail-fast: false
+      max-parallel: 19
+      matrix: ${{ fromJSON(needs.prep.outputs.matrix) }}
+    name: ${{ matrix.name }}
+    steps:
+      - name: free disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache \
+            /usr/local/share/boost /usr/share/swift /usr/local/julia* /usr/local/share/powershell /usr/local/share/chromium
+          sudo docker image prune -af > /dev/null
+          df -h /
+      - uses: actions/checkout@v4
+        with: {repository: "${{ env.CI_REPO }}", path: ci}
+      - uses: actions/download-artifact@v4
+        with: {name: prep}
+      - uses: actions/download-artifact@v4
+        with: {name: build, path: build}
+      - run: mkdir -p src && tar xzf src.tar.gz -C src && chmod +x build/cppwrf
+      - uses: actions/cache/restore@v4
+        if: matrix.kind == 'diff'
+        with:
+          path: .ccache
+          key: ccache-diff-${{ needs.prep.outputs.commit }}
+          restore-keys: ccache-diff-
+      - name: ${{ matrix.kind }} (Debian 13 container)
+        env: {CASES: "${{ matrix.cases }}", TARS: "${{ matrix.tars }}", KIND: "${{ matrix.kind }}", DATA_TAG: "${{ inputs.data_tag }}"}
+        run: |
+          docker run --rm -v "$GITHUB_WORKSPACE:/w" -e DATA_REPO -e DATA_TAG "${{ needs.prep.outputs.image }}" \
+            bash /w/ci/ci/job.sh "$KIND" "${CASES:--}" "$TARS"
+      - name: logs
+        if: always()
+        run: |
+          sudo chown -R "$(id -u)" out .ccache 2>/dev/null || true
+          cat out/setup.out 2>/dev/null; cat out/versions.txt out/data.txt 2>/dev/null
+          grep -hE "^(SUITE|PASS|FAIL|SKIP|exit)" out/*.log 2>/dev/null | tail -60 || true
+          df -h /
+      - uses: actions/cache/save@v4
+        if: always() && matrix.kind == 'diff'
+        with:
+          path: .ccache
+          key: ccache-diff-${{ needs.prep.outputs.commit }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: "logs-${{ matrix.name }}", path: "out/*.log\nout/*.out\nout/*.txt", retention-days: 30}
+
+  gate:
+    needs: [prep, build, work]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {repository: "${{ env.CI_REPO }}", path: ci}
+      - uses: actions/download-artifact@v4
+        with: {name: prep}
+      - uses: actions/download-artifact@v4
+        with: {pattern: "logs-*", path: logs}
+      - name: gate
+        env: {CASES: "${{ inputs.cases }}", FULL: "${{ inputs.full }}", RB: "${{ needs.build.result }}", RW: "${{ needs.work.result }}"}
+        run: |
+          mkdir -p src && tar xzf src.tar.gz -C src
+          python3 ci/ci/gate.py logs plan results
+          cp plan/* results/; cp logs/logs-build/cmake.log results/ 2>/dev/null || echo "build: no cmake.log" >> results/setup.out
+          sed 's/^/build: /' logs/logs-build/setup.out >> results/setup.out 2>/dev/null || true
+          for d in logs/logs-*; do mkdir -p "results/jobs/${d#logs/logs-}"; cp "$d"/* "results/jobs/${d#logs/logs-}/" 2>/dev/null; done
+          [ "$RB" = success ] || echo "build: $RB" >> results/setup.out
+          [ "$RW" = success ] || echo "work: $RW (a job failed or was cancelled)" >> results/setup.out
+          set +e
+          bash src/tools/gcp/suite_status.sh results "$CASES" "$FULL" | tee results/summary.txt
+          st=${PIPESTATUS[0]}
+          echo "status $st" >> results/summary.txt
+          exit $st
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: results, path: results/, retention-days: 30}
