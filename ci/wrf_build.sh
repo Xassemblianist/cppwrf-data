@@ -10,7 +10,7 @@ URL=https://github.com/wrf-model/WRF/releases/download/v4.8.0/v4.8.0.tar.gz
 SHA=${WRF_TARBALL_SHA256:-}
 export DEBIAN_FRONTEND=noninteractive
 apt-get -qq update > /dev/null
-apt-get -qq install -y build-essential gfortran m4 perl csh file curl ca-certificates libnetcdf-dev libnetcdff-dev \
+apt-get -qq install -y build-essential gfortran m4 perl tcsh file curl ca-certificates libnetcdf-dev libnetcdff-dev \
   python3-netcdf4 python3-numpy zstd > /dev/null
 mkdir -p /opt/netcdf && for d in bin include; do ln -sfn /usr/$d /opt/netcdf/$d; done && ln -sfn /usr/lib/x86_64-linux-gnu /opt/netcdf/lib
 export NETCDF=/opt/netcdf WRFIO_NCD_LARGE_FILE_SUPPORT=1
@@ -25,5 +25,8 @@ printf '32\n1\n' | ./configure -r8 > configure.out 2>&1
 [ "$FLAVOR" = r8d8 ] && sed -i 's/^PROMOTION\s*=.*/PROMOTION       =       -fdefault-real-8 -fdefault-double-8/' configure.wrf
 grep -E '^(PROMOTION|RWORDSIZE|FCOPTIM|FCBASEOPTS_NO_G|DM_FC|SFC|NETCDFPATH)\b' configure.wrf
 ./compile em_real -j "$(nproc)" > compile.log 2>&1 || true
+# WRF's parallel make can lose a module dependency: continue with fewer jobs (as CPPWRF's tools/bench/fp32_body.sh)
+[ -x main/wrf.exe ] && [ -x main/real.exe ] || ./compile em_real -j 2 >> compile.log 2>&1 || true
+[ -x main/wrf.exe ] && [ -x main/real.exe ] || ./compile em_real -j 1 >> compile.log 2>&1 || true
 ls -la main/wrf.exe main/real.exe
 md5sum main/wrf.exe main/real.exe
