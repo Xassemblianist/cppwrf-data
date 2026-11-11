@@ -42,7 +42,8 @@ jobs:
           key=$(sha256sum ci/ci/wrf_build.sh | cut -c1-12)
           name=wrf-4.8.0-$FL-$key.tar.zst
           gh release view wrf-build -R "$CI_REPO" > /dev/null 2>&1 ||
-            gh release create wrf-build -R "$CI_REPO" --title wrf-build --notes "WRF v4.8.0 builds of ci/wrf_build.sh (the tree after ./compile em_real)"
+            gh release create wrf-build -R "$CI_REPO" --title wrf-build --notes "WRF v4.8.0 builds of ci/wrf_build.sh (the tree after ./compile em_real)" ||
+            { sleep 10; gh release view wrf-build -R "$CI_REPO" > /dev/null; }  # the other flavour's job made it
           if gh release view wrf-build -R "$CI_REPO" --json assets --jq '.assets[].name' | grep -qx "$name"; then
             echo "$name exists"; exit 0
           fi
