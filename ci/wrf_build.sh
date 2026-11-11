@@ -7,7 +7,7 @@
 set -euo pipefail
 FLAVOR=$1 DEST=$2
 URL=https://github.com/wrf-model/WRF/releases/download/v4.8.0/v4.8.0.tar.gz
-SHA=${WRF_TARBALL_SHA256:-}
+SHA=${WRF_TARBALL_SHA256:-f3b997266379e1719d186c92471a8f44f8185e976244abde82145a7fddeaf418}
 export DEBIAN_FRONTEND=noninteractive
 apt-get -qq update > /dev/null
 apt-get -qq install -y build-essential gfortran m4 perl tcsh file curl ca-certificates libnetcdf-dev libnetcdff-dev \
