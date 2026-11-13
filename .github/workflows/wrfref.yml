@@ -92,8 +92,15 @@ jobs:
           cat > job.sh <<'EOF'
           set -uo pipefail
           export DEBIAN_FRONTEND=noninteractive
-          apt-get -qq update > /dev/null && apt-get -qq install -y curl ca-certificates libnetcdf22 libnetcdff7 libgfortran5 python3-netcdf4 python3-numpy > /dev/null
+          apt-get -qq update > /dev/null && apt-get -qq install -y curl ca-certificates libnetcdf22 libnetcdff7 libgfortran5 python3-netcdf4 python3-numpy g++ > /dev/null
           mkdir -p /w/out; : > /w/out/setup.out
+          { grep -m1 'model name' /proc/cpuinfo; grep -m1 vendor_id /proc/cpuinfo; echo "nproc $(nproc)"; } > /w/out/cpu.txt
+          # WRF's vectorised loops call glibc libmvec's 2-lane log / log10, whose bits differ on AMD CPUs (rcpps): the
+          # references are Intel-made, so wrf.exe takes them from CPPWRF's tests/phys/libmvec_intel.cpp (Intel's bits
+          # on every x86-64 CPU), preloaded
+          g++ -std=c++20 -O2 -ffp-contract=off -fno-exceptions -fno-rtti -fPIC -shared -I/w/src/src \
+            /w/src/tests/phys/libmvec_intel.cpp -o /w/libmvec_intel.so || echo "SETUP libmvec_intel.so" >> /w/out/setup.out
+          export LD_PRELOAD=/w/libmvec_intel.so
           [ -z "$DATA" ] || LOG=/w/out/data.txt SETUP=/w/out/setup.out PARTS=/w/parts bash /w/ci/ci/fetch_data.sh /w/data "$DATA"
           for fl in r8 r8d8; do [ -e /w/wrf/WRF-4.8.0-$fl/main/wrf.exe ] && ln -sfn /w/wrf/WRF-4.8.0-$fl/main/wrf.exe /w/wrf/wrf_$fl.exe; done
           W=/w/wrf_runs; mkdir -p $W
