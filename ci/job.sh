@@ -56,16 +56,21 @@ case $KIND in
     OMP_NUM_THREADS=$T python3 tests/verify/ideal_files_test.py $W/build > $O/idealfiles.log 2>&1
     echo "exit $?" >> $O/idealfiles.log ;;
   diff)  # the differential tests and the other ctest tests (their own build with -DCPPWRF_DIFF_TESTS=ON)
-    packages
+    packages; data
     case ,$TARS, in *,diff_data.tar,*) ;; *)  # WRF's build trees from the wrf-build release (ci/wrf_build.sh)
       key=$(sha256sum /w/ci/ci/wrf_build.sh | cut -c1-12); mkdir -p /w/wrfb $W/data/wrf_build
       for fl in r8 r8d8; do
-        curl -fsSL --retry 5 "https://github.com/${DATA_REPO:-Xassemblianist/cppwrf-data}/releases/download/wrf-build/wrf-4.8.0-$fl-$key.tar.zst" |
-          zstd -dq | tar xf - -C /w/wrfb && ln -sfn /w/wrfb/WRF-4.8.0-$fl $W/data/wrf_build/$fl ||
-          echo "DATA_FAILED wrf-build wrf-4.8.0-$fl-$key.tar.zst" >> $O/setup.out
+        if curl -fsSL --retry 5 "https://github.com/${DATA_REPO:-Xassemblianist/cppwrf-data}/releases/download/wrf-build/wrf-4.8.0-$fl-$key.tar.zst" |
+             zstd -dq | tar xf - -C /w/wrfb; then
+          # files a data tar adds to the build tree (port_c01_diff.tar: wrf_build/r8/run/...) go into it
+          if [ -d $W/data/wrf_build/$fl ] && [ ! -L $W/data/wrf_build/$fl ]; then
+            cp -a $W/data/wrf_build/$fl/. /w/wrfb/WRF-4.8.0-$fl/ && rm -rf $W/data/wrf_build/$fl
+          fi
+          ln -sfn /w/wrfb/WRF-4.8.0-$fl $W/data/wrf_build/$fl
+        else echo "DATA_FAILED wrf-build wrf-4.8.0-$fl-$key.tar.zst" >> $O/setup.out; fi
       done ;;
     esac
-    data; cd $W/src
+    cd $W/src
     export CCACHE_DIR=/w/.ccache CCACHE_MAXSIZE=2G CMAKE_CXX_COMPILER_LAUNCHER=ccache
     OMP_NUM_THREADS=4 bash tools/gcp/run_diff_tests.sh $W/src $W/build_diff $W/data $O > $O/diff_setup.out 2>&1
     cat $O/diff_setup.out >> $O/setup.out ;;
