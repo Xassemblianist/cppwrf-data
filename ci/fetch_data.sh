@@ -41,6 +41,13 @@ for ((i = 0; i < n; i++)); do
       echo "TAR $t $(awk '{print $2}' "$P/$t.sums" | (cd "$P" && xargs stat -c %s) | awk '{s += $1} END {print s}') $(cat "$P/$t.ok") $((SECONDS - t0))" >> "$LOG"
     else echo "DATA_FAILED $t (unpack)" >> "$SETUP"; bad=1; fi
     (cd "$P" && awk '{print $2}' "$t.sums" | xargs rm -f)
+    # TAR.links (a small tar of relative links, SHA256SUMS lists it): links the re-pack had to leave out (they pointed
+    # into the reference machine's home), as relative links in the data tree
+    if grep -qE "  ${t//./\\.}\.links$" "$P/SHA256SUMS"; then
+      if get "$t.links" && (cd "$P" && grep -E "  ${t//./\\.}\.links$" SHA256SUMS | sha256sum -c --quiet -) &&
+         tar xf "$P/$t.links" -C "$DEST"; then echo "LINKS $t.links" >> "$LOG"; rm -f "$P/$t.links"
+      else echo "DATA_FAILED $t.links" >> "$SETUP"; bad=1; fi
+    fi
   else echo "DATA_FAILED $t (download or sha256)" >> "$SETUP"; bad=1; fi
 done
 wait
