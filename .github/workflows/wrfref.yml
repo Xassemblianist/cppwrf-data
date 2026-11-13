@@ -6,7 +6,9 @@
 #    tests/verify/make_restart_refs.sh / make_resumed_refs.sh; the directories come back as the asset
 #    TAG-refs.tar.partNNN of the `wrfref` release (with TAG-refs_md5.txt, the MD5 of every WRF output file);
 #  - rerun: "DIR:FLAVOR ..." WRF again in copies of reference directories of the data, every output file's MD5
-#    against the reference's (ci/wrf_rerun.sh: the build reproduces the references byte for byte).
+#    against the reference's (ci/wrf_rerun.sh: the build reproduces the references byte for byte). The whole
+#    references are in v05_suite_refs.tar (suite_data.tar's wrfout files keep only the compared variables):
+#    data=suite_data.tar,v05_suite_refs.tar.
 name: wrfref
 run-name: ${{ inputs.tag }}
 on:
@@ -123,9 +125,11 @@ jobs:
             [ -e "$f" ] || continue
             cp "$f" "$TAG-$(basename "$f")" && gh release upload wrfref "$TAG-$(basename "$f")" -R "$CI_REPO" --clobber && rm "$TAG-$(basename "$f")"
           done
-          [ -f out/refs_md5.txt ] && cp out/refs_md5.txt "$TAG-refs_md5.txt" && gh release upload wrfref "$TAG-refs_md5.txt" -R "$CI_REPO" --clobber
+          if [ -f out/refs_md5.txt ]; then
+            cp out/refs_md5.txt "$TAG-refs_md5.txt" && gh release upload wrfref "$TAG-refs_md5.txt" -R "$CI_REPO" --clobber
+          fi
           bad=0
-          grep . out/setup.out && bad=1
+          grep . out/setup.out && bad=1 || true
           [ ! -f out/rerun.log ] || grep -qx "exit 0" out/rerun.log || bad=1
           [ ! -f out/refs.out ] || ! grep -qE "FAILED" out/refs.out || bad=1
           exit $bad
