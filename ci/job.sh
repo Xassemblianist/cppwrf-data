@@ -56,7 +56,7 @@ case $KIND in
     OMP_NUM_THREADS=$T python3 tests/verify/ideal_files_test.py $W/build > $O/idealfiles.log 2>&1
     echo "exit $?" >> $O/idealfiles.log ;;
   diff)  # the differential tests and the other ctest tests (their own build with -DCPPWRF_DIFF_TESTS=ON)
-    packages; data
+    packages; data; env_runs  # CPPWRF_WRF_REF: ctests such as restart_alarm read WRF's ideal sounding
     case ,$TARS, in *,diff_data.tar,*) ;; *)  # WRF's build trees from the wrf-build release (ci/wrf_build.sh)
       key=$(sha256sum /w/ci/ci/wrf_build.sh | cut -c1-12); mkdir -p /w/wrfb $W/data/wrf_build
       for fl in r8 r8d8; do
