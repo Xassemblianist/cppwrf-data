@@ -7,7 +7,9 @@ import re
 import sys
 import tarfile
 
-PAT = re.compile(rb"/home/|ostriquetrum|omerkaan")
+import os
+# /home/ and the words of SCAN_WORDS (comma-separated: the user, host and e-mail names to look for)
+PAT = re.compile(b"|".join([re.escape(b"/home/")] + [re.escape(w.encode()) for w in os.environ.get("SCAN_WORDS", "").split(",") if w]))
 CH = 8 << 20
 
 
