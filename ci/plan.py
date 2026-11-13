@@ -178,6 +178,10 @@ if full:
     ddirs = {f"wrf_runs/{d}" for d in ("run_R0_r8", "run_P4_r8", "run_P7_r8", "run_P8_r8", "wrf_run")}
     # diff_runs.tar: diff_data.tar's WRF run files (wrf_runs_diff/) without its build trees, unpacked last
     dt = [t for t in vm if "diff" in t and t != "diff_data.tar"] + tars_for_dirs(ddirs)
+    # ctests that read WRF's ideal sounding (restart_alarm, input_interval: ${CPPWRF_WRF_REF}/run_qss/input_sounding):
+    # the smallest tar that holds it
+    snd = tars_for_dirs({"wrf_ref/run_qss"})
+    dt += [min(snd, key=lambda t: size.get(t, 0))] if snd else []
     extra = ["diff_runs.tar"] if "diff_runs.tar" in size else []
     jobs.append({"name": "diff", "kind": "diff", "cases": "", "tars": ",".join(forced or ordered(dt) + extra)})
 # always (suite_body.sh runs them with every suite): the translator tests read the namelists of these run directories; the comparators' self-test needs no data
