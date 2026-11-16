@@ -9,6 +9,10 @@
 #    against the reference's (ci/wrf_rerun.sh: the build reproduces the references byte for byte). The whole
 #    references are in v05_suite_refs.tar (suite_data.tar's wrfout files keep only the compared variables):
 #    data=suite_data.tar,v05_suite_refs.tar.
+#  - prep: a shell script run in the container after the data fetch and before the refs, in /w/wrf_runs (wrf.exe
+#    builds in /w/wrf/WRF-4.8.0-FLAVOR): it may make base directories base_NAME there (a reference line's BASE_RUN
+#    is then /w/wrf_runs/base_NAME), e.g. a copy of a data run with an edited wrfinput or WRF 4.8.0's tables; the
+#    base_* directories go into the refs tar and refs_md5.txt with the run directories.
 name: wrfref
 run-name: ${{ inputs.tag }}
 on:
@@ -16,6 +20,7 @@ on:
     inputs:
       refs: {description: "reference lines (newline- or ';'-separated)", default: ""}
       rerun: {description: "DIR:FLAVOR ... to run again and compare", default: ""}
+      prep: {description: "shell script run in /w/wrf_runs before the refs (makes base_* directories)", default: ""}
       data: {description: "data tars (comma-separated, in vm_data.txt order)", default: "suite_data.tar"}
       data_tag: {description: "release of Xassemblianist/cppwrf-data", default: "data-v1"}
       src_ref: {description: "CPPWRF commit whose tools run the references", default: main}
@@ -76,8 +81,10 @@ jobs:
       - uses: actions/checkout@v4
         with: {path: ci}
       - name: inputs
-        env: {REFS: "${{ inputs.refs }}", RERUN: "${{ inputs.rerun }}", SRC: "${{ inputs.src_ref }}", FLS: "${{ inputs.flavors }}"}
+        env: {REFS: "${{ inputs.refs }}", RERUN: "${{ inputs.rerun }}", SRC: "${{ inputs.src_ref }}", FLS: "${{ inputs.flavors }}",
+              PREP: "${{ inputs.prep }}"}
         run: |
+          printf '%s\n' "$PREP" > prep.sh; cat prep.sh
           printf '%s\n' "$REFS" | tr ';' '\n' | sed 's/^ *//' | grep -v '^\s*$' > refs.txt || true
           echo "$RERUN" > rerun.txt; cat refs.txt rerun.txt
           git clone -q https://github.com/Xassemblianist/CPPWRF src && git -C src checkout -q --detach "$SRC"
@@ -104,6 +111,9 @@ jobs:
           [ -z "$DATA" ] || LOG=/w/out/data.txt SETUP=/w/out/setup.out PARTS=/w/parts bash /w/ci/ci/fetch_data.sh /w/data "$DATA"
           for fl in r8 r8d8; do [ -e /w/wrf/WRF-4.8.0-$fl/main/wrf.exe ] && ln -sfn /w/wrf/WRF-4.8.0-$fl/main/wrf.exe /w/wrf/wrf_$fl.exe; done
           W=/w/wrf_runs; mkdir -p $W
+          if grep -q '[^[:space:]]' /w/prep.sh; then
+            ( cd $W && bash -e /w/prep.sh ) > /w/out/prep.out 2>&1 || echo "PREP FAILED (out/prep.out)" >> /w/out/setup.out
+          fi
           if [ -s /w/refs.txt ]; then
             while read -r name base fl sets; do
               echo "python3 /w/src/tools/gcp/wrf_ref_run.py /w/data $W /w/wrf/wrf_$fl.exe $name $base $sets"
@@ -112,7 +122,8 @@ jobs:
             names=$(awk 'NF {print $1}' /w/refs.txt)
             { CPPWRF_WRF_RUNS=$W bash /w/src/tests/verify/make_restart_refs.sh $names
               CPPWRF_WRF_RUNS=$W bash /w/src/tests/verify/make_resumed_refs.sh $names; } >> /w/out/refs.out 2>&1
-            dirs=$(for n in $names; do for p in run rst rsm; do [ -d "$W/${p}_$n" ] && echo "${p}_$n"; done; done)
+            dirs=$(for n in $names; do for p in run rst rsm; do [ -d "$W/${p}_$n" ] && echo "${p}_$n"; done; done
+                   cd $W && ls -d base_* 2>/dev/null)
             ( cd $W && find $dirs -type f \( -name 'wrfout_*' -o -name 'wrfrst_*' -o -name 'auxhist*' -o -name 'wrfinput_*' \
                 -o -name 'wrfbdy_*' -o -name 'wrflowinp_*' -o -name 'wrffdda_*' \) | sort | xargs -r md5sum | awk '{print "MD5", $2, $1}' ) > /w/out/refs_md5.txt
             mkdir -p /w/fetch && tar cf - -C $W $dirs | split -b 1900M -d -a 3 - /w/fetch/refs.tar.part
@@ -122,7 +133,7 @@ jobs:
           EOF
           docker run --rm -v "$GITHUB_WORKSPACE:/w" -e DATA -e DATA_TAG -e DATA_REPO debian:13 bash /w/job.sh
           sudo chown -R "$(id -u)" .
-          cat out/setup.out out/data.txt out/refs.out out/rerun.log 2>/dev/null || true
+          cat out/setup.out out/data.txt out/prep.out out/refs.out out/rerun.log 2>/dev/null || true
       - name: assets
         env: {TAG: "${{ inputs.tag }}"}
         run: |
