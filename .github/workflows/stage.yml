@@ -1,0 +1,94 @@
+# Stage wrfref reference assets into a data tar of the data release, on a runner (no local disk needed): the assets
+# PREFIX-refs.tar.part* of the `wrfref` release (each prefix of `prefixes`) are streamed and unpacked, the directories
+# matching `drop` (a regex on the top-level directory, default rst_/rsm_) removed, the rest packed as
+# wrf_runs/<dir> (run_NAME renamed run_NAME_r8; links into /w/data/wrf_runs made relative, other absolute links
+# dropped), scanned for /home/ paths (upload/scan_tar.py), split into 512 MiB parts and uploaded to `data_tag` as
+# TAR.partNNN. The artifact `stage-TAR` holds TAR.names / TAR.txt (scan), TAR.parts ("name sha256 size") and TAR.tar
+# ("TAR size sha256 nparts"), for the local SHA256SUMS / TARS.txt / INDEX.tsv.gz records.
+name: stage
+run-name: ${{ inputs.tar }}
+on:
+  workflow_dispatch:
+    inputs:
+      prefixes: {description: "wrfref asset prefixes (comma-separated), e.g. a14-n1a", required: true}
+      tar: {description: "data tar name, e.g. port_a14n1_data.tar", required: true}
+      drop: {description: "regex of top-level directories to leave out", default: "^(rst|rsm)_"}
+      data_tag: {description: "release to upload to", default: "data-v1"}
+permissions:
+  contents: write
+env:
+  R: Xassemblianist/cppwrf-data
+  GH_TOKEN: ${{ github.token }}
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - name: free disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache \
+            /usr/local/share/boost /usr/share/swift /usr/local/julia* /usr/local/share/powershell /usr/local/share/chromium
+          df -h /
+      - uses: actions/checkout@v4
+        with: {path: ci}
+      - name: unpack
+        env: {PREFIXES: "${{ inputs.prefixes }}", DROP: "${{ inputs.drop }}"}
+        run: |
+          mkdir -p x
+          for p in ${PREFIXES//,/ }; do
+            parts=$(gh release view wrfref -R "$R" --json assets -q '.assets[].name' | grep -E "^$p-refs\.tar\.part[0-9]+$" | sort)
+            [ -n "$parts" ] || { echo "no assets $p"; exit 1; }
+            for a in $parts; do gh release download wrfref -R "$R" -p "$a" -O - ; done | tar xf - -C x
+            for d in $(ls x); do echo "$d" | grep -qE "$DROP" && rm -rf "x/$d"; done
+            df -h / | tail -1
+          done
+          ls x
+      - name: pack and upload
+        env: {T: "${{ inputs.tar }}", TAG: "${{ inputs.data_tag }}"}
+        run: |
+          mkdir -p out up
+          cat > pack.py <<'PY'
+          import os, sys, tarfile
+          R = "x"; WR = "/w/data/wrf_runs"
+          out = tarfile.open(fileobj=sys.stdout.buffer, mode="w|", format=tarfile.GNU_FORMAT)
+          n = 0
+          for d in sorted(os.listdir(R)):
+              nd = d if (d.endswith("_r8") or not d.startswith("run_")) else d + "_r8"
+              for root, ds, files in os.walk(os.path.join(R, d)):
+                  ds.sort()
+                  arcdir = os.path.join("wrf_runs", nd, os.path.relpath(root, os.path.join(R, d))).rstrip("/.")
+                  arcdir = os.path.normpath(arcdir)
+                  for f in sorted(files):
+                      p = os.path.join(root, f); arc = os.path.join(arcdir, f)
+                      if os.path.islink(p):
+                          t = os.readlink(p)
+                          if not t.startswith(WR + "/"):
+                              continue
+                          tgt = os.path.relpath(os.path.join("wrf_runs", os.path.relpath(t, WR)), arcdir)
+                          m = tarfile.TarInfo(arc); m.type = tarfile.SYMTYPE; m.linkname = tgt; m.mode = 0o777
+                          out.addfile(m)
+                      else:
+                          m = out.gettarinfo(p, arc); m.uid = m.gid = 0; m.uname = m.gname = ""
+                          with open(p, "rb") as fh:
+                              out.addfile(m, fh)
+                      n += 1
+          out.close(); print("members", n, file=sys.stderr)
+          PY
+          cat > part.sh <<'SH'
+          set -e
+          f=up/$1; cat > "$f"
+          echo "$1 $(sha256sum "$f" | cut -d' ' -f1) $(stat -c %s "$f")" >> out/$T.parts
+          for i in 1 2 3 4 5; do gh release upload "$TAG" "$f" -R "$R" --clobber && break; sleep $((30 * i)); done
+          rm -f "$f"
+          SH
+          export T TAG
+          python3 pack.py 2> out/pack.log | tee >(python3 ci/upload/scan_tar.py "out/$T.txt") \
+            >(sha256sum | cut -d' ' -f1 > out/sha) >(wc -c > out/size) |
+            split -b 512M -d -a 3 --filter='bash part.sh "$FILE"' - "$T.part"
+          for i in $(seq 600); do grep -q '^SUMMARY' "out/$T.txt" 2>/dev/null && [ -s out/sha ] && [ -s out/size ] && break; sleep 2; done
+          echo "$T $(cat out/size) $(cat out/sha) $(wc -l < out/$T.parts)" > out/$T.tar
+          cat out/pack.log out/$T.tar; tail -1 out/$T.txt
+          grep -q "hits_text=0 hits_binary=0 hits_netcdf=0 hits_symlink=0 hits_name=0" out/$T.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: "stage-${{ inputs.tar }}", path: "out/", retention-days: 30}
