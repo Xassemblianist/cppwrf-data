@@ -1,0 +1,54 @@
+# Member lists of a data release's tars, on runners: every tar (and TAR.links) of `data_tag` streamed from its parts
+# (each checked against SHA256SUMS, ci/repack/stream_tar.sh) and listed with each regular file's sha256
+# (ci/repack/scan.py: tar, type, name, size, mode, mtime, uid, gid, uname, gname, link, sha256). The artifact
+# `scan-<data_tag>` holds one list per group (scan_<g>.tsv) and the whole tars' sizes and sha256 (tars_<g>.txt), for
+# the data-v2 layout (ci/repack/layout.py) and its byte-for-byte check against data-v1.
+name: scan
+run-name: scan ${{ inputs.data_tag }}
+on:
+  workflow_dispatch:
+    inputs:
+      data_tag: {description: "release to scan", default: "data-v1"}
+      tars: {description: "only these tars (comma-separated); empty: all", default: ""}
+      jobs: {description: "number of jobs (at most 10)", default: "10"}
+permissions:
+  contents: read
+env:
+  DATA_REPO: Xassemblianist/cppwrf-data
+jobs:
+  prep:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: m
+        env: {TAG: "${{ inputs.data_tag }}", TARS: "${{ inputs.tars }}", N: "${{ inputs.jobs }}"}
+        run: |
+          curl -fsSL --retry 5 -o SHA256SUMS "https://github.com/$DATA_REPO/releases/download/$TAG/SHA256SUMS"
+          [ "$N" -le 10 ] || N=10
+          echo "matrix=$(python3 ci/repack/groups.py SHA256SUMS "$N" ${TARS//,/ })" | tee -a "$GITHUB_OUTPUT"
+  scan:
+    needs: prep
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix: ${{ fromJSON(needs.prep.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: scan
+        env: {TAG: "${{ inputs.data_tag }}", TARS: "${{ matrix.tars }}", G: "${{ matrix.g }}"}
+        run: |
+          mkdir -p out; export P=$RUNNER_TEMP/parts TAG
+          for t in ${TARS//,/ }; do
+            t0=$SECONDS
+            bash ci/repack/stream_tar.sh "$t" | tee >(sha256sum | cut -d' ' -f1 > sha) |
+              python3 -I ci/repack/scan.py "$t" >> "out/scan_$G.tsv" || { echo "FAILED $t"; exit 1; }
+            for i in $(seq 60); do [ -s sha ] && break; sleep 1; done
+            echo "$t $(tail -1 "out/scan_$G.tsv" | cut -f4) $(cat sha) $((SECONDS - t0))" | tee -a "out/tars_$G.txt"
+            rm -f sha
+          done
+      - uses: actions/upload-artifact@v4
+        with: {name: "scan-${{ inputs.data_tag }}-${{ matrix.g }}", path: out/, retention-days: 30}
