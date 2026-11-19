@@ -211,6 +211,10 @@ if full:
     # the smallest tar that holds it
     snd = tars_for_dirs({"wrf_ref/run_qss"})
     dt += [min(snd, key=lambda t: size.get(t, 0))] if snd and a.layout == "tars" else []
+    # the tars other ctest tests read (CPPWRF's tests/verify/ctest_data.txt: port_gem10_data.tar for real_vs_wrf_runs)
+    ctd = os.path.join(V, "ctest_data.txt")
+    if a.layout == "tars" and os.path.exists(ctd):
+        dt += [x.strip() for x in open(ctd) if x.strip() and not x.startswith("#")]
     extra = ["diff_runs.tar"] if "diff_runs.tar" in size else []
     dtars = ",".join(forced or ordered(dt) + extra)
     if a.diff_jobs <= 1:
