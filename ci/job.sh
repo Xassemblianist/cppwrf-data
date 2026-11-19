@@ -3,7 +3,7 @@
 # machines that made the references; tools/colab/remote_chroot_job.sh's packages). /w is the runner's workspace:
 # /w/src (the CPPWRF source), /w/build (its CPU FP64 build), /w/data (the unpacked tars), /w/out (the logs).
 #
-#   job.sh setup | build | suite CASES TARS | files CASES TARS | idealfiles - TARS | diff - TARS | checks - TARS
+#   job.sh setup | build | suite CASES TARS | files CASES TARS | idealfiles - TARS | diff -|K/N TARS | checks - TARS
 #
 # Logs as tools/gcp/suite_body.sh writes them: setup.out (a failed setup), cmake.log, suite.log, files_<case>.log,
 # idealfiles.log, diff.log, ctest.log, unit.log, selftest.log; versions.txt (packages, CPU), data.txt (the tars),
@@ -72,6 +72,18 @@ case $KIND in
     esac
     cd $W/src
     export CCACHE_DIR=/w/.ccache CCACHE_MAXSIZE=2G CMAKE_CXX_COMPILER_LAUNCHER=ccache
+    if [ -n "$CASES" ]; then  # CASES "K/N": part K of N of the differential tests (ci/diff_split.py); the part with the
+      # least recorded time runs the other ctest tests too. The test names: ctest -N of the diff build's configuration
+      # (run_diff_tests.sh's own cmake line, which it then reuses)
+      cmake -S $W/src -B $W/build_diff -DCMAKE_BUILD_TYPE=Release -DCPPWRF_DOUBLE=ON -DCPPWRF_ENABLE_CUDA=OFF \
+        -DCPPWRF_NATIVE=OFF -DCPPWRF_DIFF_TESTS=ON -DCMAKE_CXX_FLAGS="-march=skylake -mtune=skylake" > $O/diff_part.log 2>&1
+      names() { (cd $W/build_diff && ctest -N "$@") | sed -n 's/^ *Test *#[0-9]*: *//p'; }
+      mine=$(names -L diff | python3 /w/ci/ci/diff_split.py "${CASES%/*}" "${CASES#*/}" /w/ci/ci/diff_times.txt 2>> $O/diff_part.log)
+      sel=$(grep -v '^#' <<< "$mine")
+      grep -qx '#ctest' <<< "$mine" && sel="$sel"$'\n'"$(names -LE diff)"
+      DIFF_TESTS="^($(grep . <<< "$sel" | sed 's/[][.*+?^$(){}|\\]/\\&/g' | paste -sd'|'))\$"
+      export DIFF_TESTS CTEST_NO_TESTS_ACTION=ignore; echo "DIFF_TESTS=$DIFF_TESTS" >> $O/diff_part.log
+    fi
     OMP_NUM_THREADS=4 bash tools/gcp/run_diff_tests.sh $W/src $W/build_diff $W/data $O > $O/diff_setup.out 2>&1
     cat $O/diff_setup.out >> $O/setup.out ;;
   checks)  # the translator's unit tests and the comparators' self-test

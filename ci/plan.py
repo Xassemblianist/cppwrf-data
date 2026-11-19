@@ -13,7 +13,8 @@ other jobs). Suite cases are packed into --suite-jobs jobs by their recorded tim
 plus the download time of the tars a job needs (TARS.txt sizes at --mbps MB/s, default 60), each case going to the job that ends
 earliest with it. The tars of a job come from wrf_suite.py's DATA (suite cases) or, for the files tests and the
 translator tests, from the run directories they read and the data index (INDEX.tsv: tar, type, name, link target),
-following links; without the index every tar of vm_data.txt. --layout packs: the data release is in the packs layout
+following links; without the index every tar of vm_data.txt. --diff-jobs N (default 1): the differential tests in N
+jobs (diff-1 ... diff-N, balanced by ci/diff_times.txt). --layout packs: the data release is in the packs layout
 (data-v2: INDEX.tsv names each file's pack; ci/needs.py gives the files of each check) and the tars are packs.
 """
 import argparse
@@ -37,6 +38,7 @@ ap.add_argument("--tars")
 ap.add_argument("--times")
 ap.add_argument("--layout", default="tars", choices=["tars", "packs"])
 ap.add_argument("--mbps", type=float, default=60.0)
+ap.add_argument("--diff-jobs", type=int, default=1)
 a = ap.parse_args()
 
 V = os.path.join(a.src, "tests", "verify")
@@ -210,7 +212,12 @@ if full:
     snd = tars_for_dirs({"wrf_ref/run_qss"})
     dt += [min(snd, key=lambda t: size.get(t, 0))] if snd and a.layout == "tars" else []
     extra = ["diff_runs.tar"] if "diff_runs.tar" in size else []
-    jobs.append({"name": "diff", "kind": "diff", "cases": "", "tars": ",".join(forced or ordered(dt) + extra)})
+    dtars = ",".join(forced or ordered(dt) + extra)
+    if a.diff_jobs <= 1:
+        jobs.append({"name": "diff", "kind": "diff", "cases": "", "tars": dtars})
+    else:  # --diff-jobs N: the differential tests in N parts (ci/job.sh diff K/N, ci/diff_split.py)
+        for k in range(1, a.diff_jobs + 1):
+            jobs.append({"name": f"diff-{k}", "kind": "diff", "cases": f"{k}/{a.diff_jobs}", "tars": dtars})
 # always (suite_body.sh runs them with every suite): the translator tests read the namelists of these run directories; the comparators' self-test needs no data
 tt = open(os.path.join(a.src, "tests", "tools", "test_wrf2cppwrf.py")).read()
 dirs = {f"wrf_runs/{m}" for m in re.findall(r'wrf_runs_path\(\s*"([^"/]+)/', tt)}

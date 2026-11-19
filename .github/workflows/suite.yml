@@ -16,6 +16,7 @@ on:
       slow: {description: "also the slow cases (1)", default: "0"}
       suite_jobs: {description: "number of suite jobs", default: "26"}
       data_tag: {description: "release of Xassemblianist/cppwrf-data with the tars", default: "data-v1"}
+      diff_jobs: {description: "number of differential test jobs (empty: the data release's LAYOUT, else 1)", default: ""}
       tag: {description: "a name for the run (ci_submit.sh finds the run by it)", default: ""}
   workflow_call:
     inputs:
@@ -27,6 +28,7 @@ on:
       slow: {type: string, default: "0"}
       suite_jobs: {type: string, default: "26"}
       data_tag: {type: string, default: "data-v1"}
+      diff_jobs: {type: string, default: ""}
       tag: {type: string, default: ""}
 permissions:
   contents: read
@@ -62,7 +64,7 @@ jobs:
       - name: plan
         id: plan
         env: {CASES: "${{ inputs.cases }}", FULL: "${{ inputs.full }}", DATA: "${{ inputs.data }}", SLOW: "${{ inputs.slow }}",
-              NJ: "${{ inputs.suite_jobs }}", TAG: "${{ inputs.data_tag }}"}
+              NJ: "${{ inputs.suite_jobs }}", TAG: "${{ inputs.data_tag }}", DJ: "${{ inputs.diff_jobs }}"}
         run: |
           base=https://github.com/$DATA_REPO/releases/download/$TAG
           curl -fsSL --retry 5 -o TARS.txt "$base/TARS.txt" || : > TARS.txt
@@ -71,8 +73,10 @@ jobs:
           [ -s INDEX.tsv ] && args+=(--index INDEX.tsv)
           # a release in the packs layout (data-v2: its LAYOUT file) fetches only the packs of each job's files
           if curl -fsSL --retry 5 -o LAYOUT "$base/LAYOUT" 2> /dev/null && grep -q '^packs' LAYOUT; then
-            args+=(--layout packs $(sed -n 's/^mbps /--mbps /p' LAYOUT))
+            # its other lines are plan.py options ("mbps 150" -> --mbps 150, "diff-jobs 3" -> --diff-jobs 3)
+            args+=(--layout packs $(sed -n 's/^\([^ ]*\) \([0-9.]*\)$/--\1 \2/p' LAYOUT))
           fi
+          [ -n "$DJ" ] && args+=(--diff-jobs "$DJ")
           [ -n "$CASES" ] && args+=(--cases "$CASES")
           [ "$FULL" = 1 ] && args+=(--full)
           [ -n "$DATA" ] && args+=(--data "$DATA")

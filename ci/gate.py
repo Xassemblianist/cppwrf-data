@@ -64,6 +64,33 @@ for j in jobs:
         other["unit"].append(read(os.path.join(d, "unit.log")))
         other["selftest"].append(read(os.path.join(d, "selftest.log")))
 
+
+
+def merge_ctest(logs):
+    """The logs of the diff jobs' parts (ci/job.sh diff K/N) as one: each part's lines (its summary and exit line
+    marked as the part's), then the summary over all parts and "exit N" (0: every part ran and ended with exit 0)."""
+    out, total, failed, bad = [], 0, 0, False
+    for i, t in enumerate(logs, 1):
+        if not t.strip():
+            bad = True
+            out.append(f"part {i}: no log (the job did not finish)\n")
+            continue
+        m = re.findall(r"tests passed, (\d+) tests? failed out of (\d+)", t)
+        if m:
+            failed += int(m[-1][0])
+            total += int(m[-1][1])
+        ex = re.findall(r"^exit (\d+)$", t, re.M)
+        bad = bad or not ex or ex[-1] != "0"
+        t = re.sub(r"^exit (\d+)$", rf"part {i} exit \1", t, flags=re.M)
+        out.append(re.sub(r"tests passed, ", "of the part's tests ok, ", t))
+    pct = 100 if not total else int(100 * (total - failed) / total)
+    out.append(f"{pct}% tests passed, {failed} tests failed out of {total}\nexit {1 if bad or failed else 0}\n")
+    return "".join(out)
+
+
+if len(other["diff"]) > 1:  # the differential tests in several jobs (plan.py --diff-jobs)
+    other["diff"], other["ctest"] = [merge_ctest(other["diff"])], [merge_ctest(other["ctest"])]
+
 seen = {}
 for x in lines:
     m = re.match(r"^(PASS|FAIL|SKIP) +(\S+)", x)
