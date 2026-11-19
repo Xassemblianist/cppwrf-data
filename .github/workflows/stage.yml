@@ -1,7 +1,7 @@
 # Stage wrfref reference assets into a data tar of the data release, on a runner (no local disk needed): the assets
 # PREFIX-refs.tar.part* of the `wrfref` release (each prefix of `prefixes`) are streamed and unpacked, the directories
 # matching `drop` (a regex on the top-level directory, default rst_/rsm_) removed, the rest packed as
-# wrf_runs/<dir> (run_NAME renamed run_NAME_r8; links into /w/data/wrf_runs made relative, other absolute links
+# wrf_runs/<dir> (run_NAME renamed run_NAME_r8, a directory named in `rename` "OLD=NEW ..." NEW instead; links into /w/data/wrf_runs made relative, other absolute links
 # dropped), scanned for /home/ paths (upload/scan_tar.py), split into 512 MiB parts and uploaded to `data_tag` as
 # TAR.partNNN. The artifact `stage-TAR` holds TAR.names / TAR.txt (scan), TAR.parts ("name sha256 size") and TAR.tar
 # ("TAR size sha256 nparts"), for the local SHA256SUMS / TARS.txt / INDEX.tsv.gz records.
@@ -14,6 +14,7 @@ on:
       tar: {description: "data tar name, e.g. port_a14n1_data.tar", required: true}
       drop: {description: "regex of top-level directories to leave out", default: "^(rst|rsm)_"}
       data_tag: {description: "release to upload to", default: "data-v1"}
+      rename: {description: "OLD=NEW ... top-level directories packed as wrf_runs/NEW", default: ""}
 permissions:
   contents: write
 env:
@@ -44,16 +45,18 @@ jobs:
           done
           ls x
       - name: pack and upload
-        env: {T: "${{ inputs.tar }}", TAG: "${{ inputs.data_tag }}"}
+        env: {T: "${{ inputs.tar }}", TAG: "${{ inputs.data_tag }}", RENAME: "${{ inputs.rename }}"}
         run: |
           mkdir -p out up
           cat > pack.py <<'PY'
           import os, sys, tarfile
           R = "x"; WR = "/w/data/wrf_runs"
+          REN = dict(x.split("=", 1) for x in os.environ.get("RENAME", "").split())
           out = tarfile.open(fileobj=sys.stdout.buffer, mode="w|", format=tarfile.GNU_FORMAT)
           n = 0
           for d in sorted(os.listdir(R)):
               nd = d if (d.endswith("_r8") or not d.startswith("run_")) else d + "_r8"
+              nd = REN.get(d, nd)
               for root, ds, files in os.walk(os.path.join(R, d)):
                   ds.sort()
                   arcdir = os.path.join("wrf_runs", nd, os.path.relpath(root, os.path.join(R, d))).rstrip("/.")
