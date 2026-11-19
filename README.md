@@ -16,6 +16,21 @@ files, and the differential tests use the WRF builds of the `wrf-build` release;
 relative links) restore the links between reference directories that the re-pack left out and are unpacked after
 all of a job's tars.
 
+Release `data-v2`: the same data in the packs layout, so that a suite job downloads only the files its checks read
+(made on runners from data-v1, which stays as it is; `.github/workflows/scan.yml`, `repack.yml`, `ci/repack/`). The
+data is data-v1's tars unpacked in vm_data.txt's order and then the `.links` tars, each file or link in exactly one
+pack `SOURCE.HASH.tar` (the files of one data-v1 tar that the same checks read; HASH of its entries), so packs unpack
+in any order. `INDEX.tsv.gz` lists `pack type name link size`, `TARS.txt` and `SHA256SUMS` as in data-v1, and the
+asset `LAYOUT` (also in SHA256SUMS) tells `suite.yml` / `ci/plan.py --layout packs` and `ci/fetch_data.sh` that the
+release is in this layout: `ci/needs.py` gives the files of each check from CPPWRF's tests/verify/case_data.py model
+(every entry of the directory of each reference file, the input files of the configuration's directories, links
+followed), the files, ideal files, differential and translator jobs take their run directories whole, and
+`fetch_data.sh` streams 8 packs at once into tar (`ci/fetch_pack.py`, each part checked). To make or update it:
+`scan.yml` on data-v1 (member lists with sha256), `ci/repack/layout.py` (the plan; `--previous` keeps the packs whose
+entries did not change, so a new data-v1 tar costs only its own packs), the plan files as assets of the release,
+`repack.yml`, `ci/repack/assemble.py` (SHA256SUMS, TARS.txt, INDEX.tsv.gz, LAYOUT) and `scan.yml` on the release with
+`ci/repack/check.py` (every entry byte for byte as data-v1 gives it).
+
 ## Continuous integration
 
 - `.github/workflows/suite.yml`: the CPU FP64 suite of one CPPWRF commit. `prep` takes the source (the public
