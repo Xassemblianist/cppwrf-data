@@ -14,7 +14,7 @@ on:
       full: {description: "with cases: also the files, ideal files, diff, ctest, translator jobs (1)", default: "0"}
       data: {description: "data tars instead of the cases' own (comma-separated)", default: ""}
       slow: {description: "also the slow cases (1)", default: "0"}
-      suite_jobs: {description: "number of suite jobs", default: "13"}
+      suite_jobs: {description: "number of suite jobs", default: "26"}
       data_tag: {description: "release of Xassemblianist/cppwrf-data with the tars", default: "data-v1"}
       tag: {description: "a name for the run (ci_submit.sh finds the run by it)", default: ""}
   workflow_call:
@@ -25,7 +25,7 @@ on:
       full: {type: string, default: "0"}
       data: {type: string, default: ""}
       slow: {type: string, default: "0"}
-      suite_jobs: {type: string, default: "13"}
+      suite_jobs: {type: string, default: "26"}
       data_tag: {type: string, default: "data-v1"}
       tag: {type: string, default: ""}
 permissions:
@@ -115,7 +115,7 @@ jobs:
     timeout-minutes: 345
     strategy:
       fail-fast: false
-      max-parallel: 19
+      max-parallel: 38
       matrix: ${{ fromJSON(needs.prep.outputs.matrix) }}
     name: ${{ matrix.name }}
     steps:
