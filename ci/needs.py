@@ -167,7 +167,10 @@ def files_cases(src):
     return out
 
 
-DIFF_DIRS = {f"wrf_runs/{d}" for d in ("run_R0_r8", "run_P4_r8", "run_P7_r8", "run_P8_r8", "wrf_run")}
+# plan.py's run directories of the differential tests, and those of the ctest input_interval
+# (tests/verify/input_interval_test.py: run_SU1_r8/steps, run_FD1_r8/steps; a skip without them)
+DIFF_DIRS = {f"wrf_runs/{d}" for d in ("run_R0_r8", "run_P4_r8", "run_P7_r8", "run_P8_r8", "wrf_run", "run_SU1_r8",
+                                         "run_FD1_r8")}
 
 
 def diff_entries(idx):
