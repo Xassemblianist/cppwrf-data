@@ -81,7 +81,8 @@ case $KIND in
       mine=$(names -L diff | python3 /w/ci/ci/diff_split.py "${CASES%/*}" "${CASES#*/}" /w/ci/ci/diff_times.txt 2>> $O/diff_part.log)
       sel=$(grep -v '^#' <<< "$mine")
       grep -qx '#ctest' <<< "$mine" && sel="$sel"$'\n'"$(names -LE diff)"
-      DIFF_TESTS="^($(grep . <<< "$sel" | sed 's/[][.*+?^$(){}|\\]/\\&/g' | paste -sd'|'))\$"
+      DIFF_TESTS=$(python3 -c 'import re, sys; print("^(" + "|".join(re.escape(x) for x in sys.stdin.read().split()) + ")$")' <<< "$sel")
+      [ -n "$sel" ] || echo "DIFF_PART_FAILED $CASES: no tests (diff_part.log)" >> $O/setup.out
       export DIFF_TESTS CTEST_NO_TESTS_ACTION=ignore; echo "DIFF_TESTS=$DIFF_TESTS" >> $O/diff_part.log
     fi
     OMP_NUM_THREADS=4 bash tools/gcp/run_diff_tests.sh $W/src $W/build_diff $W/data $O > $O/diff_setup.out 2>&1
