@@ -40,6 +40,9 @@ for j in jobs:
     wall = read(os.path.join(d, "wall.txt")).split()
     dsec = sum(int(x.split()[3]) + int(x.split()[4]) for x in read(os.path.join(d, "data.txt")).splitlines()
                if x.startswith("TAR ") and len(x.split()) >= 5)
+    pk = re.search(r"^PACKS \d+ (\d+)$", read(os.path.join(d, "data.txt")), re.M)
+    if pk:  # the packs layout: packs fetched several at once, the PACKS line has the wall time
+        dsec = int(pk.group(1))
     jobrows.append(f"{j['name']:12s} {wall[1] if len(wall) > 1 else '-':>6s} s  data {dsec:5d} s  "
                    f"{cpu.group(1).strip() if cpu else '-'}")
     if j["kind"] == "suite":
