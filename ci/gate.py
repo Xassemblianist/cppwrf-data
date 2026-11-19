@@ -68,7 +68,7 @@ for j in jobs:
 
 def merge_ctest(logs):
     """The logs of the diff jobs' parts (ci/job.sh diff K/N) as one: each part's lines (its summary and exit line
-    marked as the part's), then the summary over all parts and "exit N" (0: every part ran and ended with exit 0)."""
+    marked as the part's), then the summary over all parts and "exit N" (0: every part ran and ended with exit 0, and some test ran)."""
     out, total, failed, bad = [], 0, 0, False
     for i, t in enumerate(logs, 1):
         if not t.strip():
@@ -84,7 +84,7 @@ def merge_ctest(logs):
         t = re.sub(r"^exit (\d+)$", rf"part {i} exit \1", t, flags=re.M)
         out.append(re.sub(r"tests passed, ", "of the part's tests ok, ", t))
     pct = 100 if not total else int(100 * (total - failed) / total)
-    out.append(f"{pct}% tests passed, {failed} tests failed out of {total}\nexit {1 if bad or failed else 0}\n")
+    out.append(f"{pct}% tests passed, {failed} tests failed out of {total}\nexit {1 if bad or failed or not total else 0}\n")
     return "".join(out)
 
 
