@@ -69,6 +69,10 @@ jobs:
           curl -fsSL --retry 5 "$base/INDEX.tsv.gz" | gunzip > INDEX.tsv || : > INDEX.tsv
           args=(--suite-jobs "$NJ" --tars TARS.txt --times ci/ci/times.txt)
           [ -s INDEX.tsv ] && args+=(--index INDEX.tsv)
+          # a release in the packs layout (data-v2: its LAYOUT file) fetches only the packs of each job's files
+          if curl -fsSL --retry 5 -o LAYOUT "$base/LAYOUT" 2> /dev/null && grep -q '^packs' LAYOUT; then
+            args+=(--layout packs $(sed -n 's/^mbps /--mbps /p' LAYOUT))
+          fi
           [ -n "$CASES" ] && args+=(--cases "$CASES")
           [ "$FULL" = 1 ] && args+=(--full)
           [ -n "$DATA" ] && args+=(--data "$DATA")

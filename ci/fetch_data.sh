@@ -2,7 +2,8 @@
 # fetch_data.sh DEST TAR,TAR,... : the data tars from the release assets (parts of at most 2 GiB, SHA256SUMS), each
 # part checked, unpacked into DEST in the given order (a later tar replaces an earlier one's files). The next tar's
 # parts download while one is unpacked. Lines "TAR name bytes download_s unpack_s" go to $LOG (default data.txt),
-# failures as "DATA_FAILED ..." to setup.out.
+# failures as "DATA_FAILED ..." to setup.out. A release whose SHA256SUMS lists LAYOUT (data-v2) is in the packs layout:
+# the names are packs (TARS of plan.py --layout packs), fetched several at once (below).
 #   DATA_REPO (Xassemblianist/cppwrf-data), DATA_TAG (data-v1), PARTS (a scratch directory, default DEST/../parts)
 set -uo pipefail
 DEST=$1 LIST=$2
@@ -20,6 +21,25 @@ get() {  # get NAME: one asset with retries
 }
 export -f get; export P URL
 get SHA256SUMS || { echo "DATA_FAILED SHA256SUMS of $REPO $TAG" >> "$SETUP"; exit 1; }
+if grep -qE '  LAYOUT$' "$P/SHA256SUMS"; then
+  # the packs layout (data-v2, ci/repack/layout.py): each file in exactly one pack, so the packs unpack in any order;
+  # $FETCH_JOBS (default 8) packs at once, each streamed from its parts (checked, ci/fetch_pack.py) into tar
+  HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+  pack() {
+    local t=$1
+    # shellcheck disable=SC2046
+    if python3 "$HERE/fetch_pack.py" "$URL" "$P/$t.stat" $(grep -E "  ${t//./\\.}\.part[0-9]+$" "$P/SHA256SUMS" |
+         sort -k2 | awk '{print $2, $1}') | tar xf - -C "$DEST" && [ -s "$P/$t.stat" ]; then
+      echo "TAR $t $(cut -d' ' -f1 "$P/$t.stat") $(cut -d' ' -f2 "$P/$t.stat") 0" >> "$LOG"
+    else echo "DATA_FAILED $t (download, sha256 or unpack)" >> "$SETUP"; return 1; fi
+  }
+  export -f pack; export HERE DEST LOG SETUP
+  t0=$SECONDS
+  tr , '\n' <<< "$LIST" | grep . | xargs -P "${FETCH_JOBS:-8}" -I{} bash -c 'pack "$1"' _ {}
+  st=$?
+  echo "PACKS $(tr , '\n' <<< "$LIST" | grep -c .) $((SECONDS - t0))" >> "$LOG"
+  exit $((st != 0))
+fi
 download() {  # download TAR: its parts, 4 at a time, checked; TAR.ok or TAR.failed
   local t=$1 t0=$SECONDS
   grep -E "  ${t//./\\.}\.part[0-9]+$" "$P/SHA256SUMS" > "$P/$t.sums"

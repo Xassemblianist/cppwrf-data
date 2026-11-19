@@ -10,10 +10,11 @@ diff | checks, cases, tars) and OUTDIR/expected.txt (the suite cases that must P
 (every CPU FP64 case but the slow ones, the files tests, the ideal files test, the differential and ctest tests, the
 translator tests and the comparators' self-test). --cases: only these suite cases (exact names; with --full also the
 other jobs). Suite cases are packed into --suite-jobs jobs by their recorded time (times.txt; unknown cases 150 s)
-plus the download time of the tars a job needs (TARS.txt sizes at 60 MB/s), each case going to the job that ends
+plus the download time of the tars a job needs (TARS.txt sizes at --mbps MB/s, default 60), each case going to the job that ends
 earliest with it. The tars of a job come from wrf_suite.py's DATA (suite cases) or, for the files tests and the
 translator tests, from the run directories they read and the data index (INDEX.tsv: tar, type, name, link target),
-following links; without the index every tar of vm_data.txt.
+following links; without the index every tar of vm_data.txt. --layout packs: the data release is in the packs layout
+(data-v2: INDEX.tsv names each file's pack; ci/needs.py gives the files of each check) and the tars are packs.
 """
 import argparse
 import json
@@ -34,6 +35,8 @@ ap.add_argument("--files-jobs", type=int, default=2)
 ap.add_argument("--index")
 ap.add_argument("--tars")
 ap.add_argument("--times")
+ap.add_argument("--layout", default="tars", choices=["tars", "packs"])
+ap.add_argument("--mbps", type=float, default=60.0)
 a = ap.parse_args()
 
 V = os.path.join(a.src, "tests", "verify")
@@ -119,6 +122,29 @@ def tars_for_dirs(dirs):
     return ordered(out)
 
 
+if a.layout == "packs":
+    # the packs layout (data-v2, ci/repack/layout.py): every file in one pack; a check fetches the packs of the files
+    # it reads (ci/needs.py), the files tests and the translator tests the packs of their run directories (above);
+    # packs largest first (fetch_data.sh fetches several at once)
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import needs  # noqa: E402
+    idx = needs.Index(a.index)
+
+    def ordered(tars):  # noqa: F811
+        return sorted(set(tars), key=lambda t: (-size[t], t))
+
+    def data_of(names):  # noqa: F811
+        if forced is not None:
+            return forced
+        out = set()
+        for n in names:
+            e = needs.case_entries(a.src, n, idx)
+            if not e:
+                sys.exit(f"plan: no data for {n} in the packs index")
+            out |= {idx.ent[x][2] for x in e}
+        return ordered(out)
+
+
 jobs = []
 # suite jobs: longest first, each to the job that ends earliest with it (compute + new data at 60 MB/s)
 K = max(1, min(a.suite_jobs, len(cases)))
@@ -128,7 +154,7 @@ for c in sorted(cases, key=lambda c: -times.get(c, 150.0)):
     need = set(data_of([c]))
 
     def cost(g):
-        new = sum(size[t] for t in need - g["tars"]) / 60e6
+        new = sum(size[t] for t in need - g["tars"]) / (a.mbps * 1e6)
         return g["t"] + tc + new
     g = min(groups, key=cost)
     g["t"] = cost(g)
@@ -177,11 +203,12 @@ if full:
     # builds; diff_data.tar holds the reference machine's and is not published), the runs they read from the suite data
     ddirs = {f"wrf_runs/{d}" for d in ("run_R0_r8", "run_P4_r8", "run_P7_r8", "run_P8_r8", "wrf_run")}
     # diff_runs.tar: diff_data.tar's WRF run files (wrf_runs_diff/) without its build trees, unpacked last
-    dt = [t for t in vm if "diff" in t and t != "diff_data.tar"] + tars_for_dirs(ddirs)
+    dt = [t for t in vm if "diff" in t and t != "diff_data.tar"] + tars_for_dirs(ddirs) if a.layout == "tars" else \
+        [idx.ent[x][2] for x in needs.diff_entries(idx)]
     # ctests that read WRF's ideal sounding (restart_alarm, input_interval: ${CPPWRF_WRF_REF}/run_qss/input_sounding):
     # the smallest tar that holds it
     snd = tars_for_dirs({"wrf_ref/run_qss"})
-    dt += [min(snd, key=lambda t: size.get(t, 0))] if snd else []
+    dt += [min(snd, key=lambda t: size.get(t, 0))] if snd and a.layout == "tars" else []
     extra = ["diff_runs.tar"] if "diff_runs.tar" in size else []
     jobs.append({"name": "diff", "kind": "diff", "cases": "", "tars": ",".join(forced or ordered(dt) + extra)})
 # always (suite_body.sh runs them with every suite): the translator tests read the namelists of these run directories; the comparators' self-test needs no data

@@ -1,0 +1,65 @@
+# A data release in the packs layout (data-v2), made on runners from the tars of `source_tag` (data-v1, read only):
+# ci/repack/layout.py's plan (assets repack.tsv.gz, hardlinks.tsv, jobs.json of `data_tag`) gives each member of a
+# source tar its pack; each job streams its source tars (ci/repack/stream_tar.sh, every part checked against
+# SHA256SUMS) through ci/repack/repack.py, which writes the packs and uploads each (ci/repack/upload.sh) as soon as
+# it is complete. The artifact repack-<data_tag>-<g> holds the uploaded parts' sha256 (sums.txt), the packs
+# (tars.txt: NAME bytes sha256 parts) and what was written (members_*.tsv), for the release's SHA256SUMS / TARS.txt
+# and the check against data-v1 (the scan workflow on data_tag, compared with layout.py's expected.tsv).
+name: repack
+run-name: repack ${{ inputs.source_tag }} to ${{ inputs.data_tag }}
+on:
+  workflow_dispatch:
+    inputs:
+      data_tag: {description: "release to write (holds the plan)", default: "data-v2"}
+      source_tag: {description: "release to read", default: "data-v1"}
+      groups: {description: "only these job numbers of jobs.json (comma-separated); empty: all", default: ""}
+permissions:
+  contents: write
+env:
+  DATA_REPO: Xassemblianist/cppwrf-data
+  GH_TOKEN: ${{ github.token }}
+jobs:
+  prep:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    steps:
+      - id: m
+        env: {TAG: "${{ inputs.data_tag }}", G: "${{ inputs.groups }}"}
+        run: |
+          gh release download "$TAG" -R "$DATA_REPO" -p jobs.json
+          echo "matrix=$(G=$G python3 -c 'import json, os; g = [x for x in os.environ["G"].split(",") if x]
+          m = json.load(open("jobs.json")); m["include"] = [x for x in m["include"] if not g or str(x["g"]) in g]
+          print(json.dumps(m))')" | tee -a "$GITHUB_OUTPUT"
+  repack:
+    needs: prep
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix: ${{ fromJSON(needs.prep.outputs.matrix) }}
+    steps:
+      - name: free disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache \
+            /usr/local/share/boost /usr/share/swift /usr/local/julia* /usr/local/share/powershell /usr/local/share/chromium
+          sudo docker image prune -af > /dev/null
+          df -h / /mnt
+      - uses: actions/checkout@v4
+      - name: repack
+        env: {UP_TAG: "${{ inputs.data_tag }}", TAG: "${{ inputs.source_tag }}", TARS: "${{ matrix.tars }}"}
+        run: |
+          mkdir -p out plan; export OUT=$PWD/out P=$RUNNER_TEMP/parts UP_TAG TAG
+          gh release download "$UP_TAG" -R "$DATA_REPO" -p repack.tsv.gz -p hardlinks.tsv -D plan
+          gunzip plan/repack.tsv.gz
+          for t in ${TARS//,/ }; do
+            t0=$SECONDS
+            bash ci/repack/stream_tar.sh "$t" |
+              python3 -I ci/repack/repack.py "$t" plan/repack.tsv out --hardlinks plan/hardlinks.tsv \
+                --work "$RUNNER_TEMP/packs" --disk $((6 << 30)) || { echo "FAILED $t"; exit 1; }
+            echo "$t $((SECONDS - t0)) s"; df -h / | tail -1
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: "repack-${{ inputs.data_tag }}-${{ matrix.g }}", path: out/, retention-days: 30}
