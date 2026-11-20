@@ -109,10 +109,11 @@ jobs:
           restore-keys: ccache-cpu-
       - name: build (Debian 13 container)
         run: docker run --rm -v "$GITHUB_WORKSPACE:/w" "${{ needs.prep.outputs.image }}" bash /w/ci/ci/job.sh build
-      - run: sudo chown -R "$(id -u)" . ; cat out/setup.out out/versions.txt; tail -3 out/cmake.log
+      - run: sudo chown -R "$(id -u)" . ; cat out/setup.out out/versions.txt; tail -3 out/cmake.log; tail -3 out/cmake_sp.log 2>/dev/null || true
         if: always()
       - uses: actions/upload-artifact@v4
-        with: {name: build, path: build/cppwrf, retention-days: 7, if-no-files-found: error}
+        # out/versions.txt keeps the artifact's root at the workspace (build/cppwrf, build_sp/cppwrf) when build_sp is absent
+        with: {name: build, path: "build/cppwrf\nbuild_sp/cppwrf\nout/versions.txt", retention-days: 7, if-no-files-found: error}
       - uses: actions/upload-artifact@v4
         if: always()
         with: {name: logs-build, path: "out/*.log\nout/*.out\nout/*.txt", retention-days: 30}
@@ -138,8 +139,8 @@ jobs:
       - uses: actions/download-artifact@v4
         with: {name: prep}
       - uses: actions/download-artifact@v4
-        with: {name: build, path: build}
-      - run: mkdir -p src && tar xzf src.tar.gz -C src && chmod +x build/cppwrf
+        with: {name: build, path: .}
+      - run: mkdir -p src && tar xzf src.tar.gz -C src && chmod +x build/cppwrf && { [ ! -f build_sp/cppwrf ] || chmod +x build_sp/cppwrf; }
       - uses: actions/cache/restore@v4
         if: matrix.kind == 'diff'
         with:

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # One job of the suite workflow, in the Debian 13 container (the compilers, glibc / libmvec, NetCDF and Python of the
 # machines that made the references; tools/colab/remote_chroot_job.sh's packages). /w is the runner's workspace:
-# /w/src (the CPPWRF source), /w/build (its CPU FP64 build), /w/data (the unpacked tars), /w/out (the logs).
+# /w/src (the CPPWRF source), /w/build (its CPU FP64 build), /w/build_sp (its CPU FP32 build, -DCPPWRF_DOUBLE=OFF,
+# for the cpu_sp cases against WRF real*4), /w/data (the unpacked tars), /w/out (the logs).
 #
 #   job.sh setup | build | suite CASES TARS | files CASES TARS | idealfiles - TARS | diff -|K/N TARS | checks - TARS
 #
@@ -30,6 +31,14 @@ build() {  # the CPU FP64 binary as suite_body.sh builds it (-march=skylake: the
     cmake --build $W/build -j"$(nproc)" --target cppwrf >> $O/cmake.log 2>&1 || { echo "BUILD_FAILED (cmake.log)" >> $O/setup.out; return 1; }
   ccache -s >> $O/cmake.log 2>&1
 }
+build_sp() {  # the CPU FP32 binary (the cpu_sp cases), same flags, CPPWRF_DOUBLE=OFF; a source without cpu_sp cases
+  # (wrf_suite.py has no --cpu-sp) is not built
+  grep -q -- '--cpu-sp' $W/src/tests/verify/wrf_suite.py || return 0
+  export CCACHE_DIR=/w/.ccache CCACHE_MAXSIZE=2G
+  cmake -S $W/src -B $W/build_sp -DCMAKE_BUILD_TYPE=Release -DCPPWRF_DOUBLE=OFF -DCPPWRF_ENABLE_CUDA=OFF -DCPPWRF_NATIVE=OFF \
+    -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_FLAGS="-march=skylake -mtune=skylake" > $O/cmake_sp.log 2>&1 &&
+    cmake --build $W/build_sp -j"$(nproc)" --target cppwrf >> $O/cmake_sp.log 2>&1 || { echo "BUILD_FAILED fp32 (cmake_sp.log)" >> $O/setup.out; return 1; }
+}
 data() {  # the tars of this job
   [ -n "$TARS" ] || return 0
   LOG=$O/data.txt SETUP=$O/setup.out PARTS=/w/parts bash /w/ci/ci/fetch_data.sh $W/data "$TARS"
@@ -39,10 +48,11 @@ env_runs() { export CPPWRF_WRF_RUNS=$W/data/wrf_runs CPPWRF_WRF_REF=$W/data/wrf_
 T=$(nproc)
 case $KIND in
   build)
-    packages; build || exit 1 ;;
+    packages; build || exit 1; build_sp || exit 1 ;;
   suite)
     packages; data; env_runs; cd $W/src
-    OMP_NUM_THREADS=$T python3 tests/verify/wrf_suite.py --cpu-dp $W/build/cppwrf --jobs 1 --out /w/scratch/suite \
+    sp=(); [ -x $W/build_sp/cppwrf ] && sp=(--cpu-sp $W/build_sp/cppwrf)  # the cpu_sp cases of CASES
+    OMP_NUM_THREADS=$T python3 tests/verify/wrf_suite.py --cpu-dp $W/build/cppwrf "${sp[@]}" --jobs 1 --out /w/scratch/suite \
       --only "$CASES" --exact > $O/suite.log 2>&1
     echo "exit $?" >> $O/suite.log ;;
   files)
