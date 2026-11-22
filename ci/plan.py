@@ -39,6 +39,7 @@ ap.add_argument("--times")
 ap.add_argument("--layout", default="tars", choices=["tars", "packs"])
 ap.add_argument("--mbps", type=float, default=60.0)
 ap.add_argument("--diff-jobs", type=int, default=1)
+ap.add_argument("--max-gib", type=float, default=90.0)  # a runner's disk: at most this much data (TARS.txt sizes) per suite job
 a = ap.parse_args()
 
 V = os.path.join(a.src, "tests", "verify")
@@ -159,7 +160,13 @@ for c in sorted(cases, key=lambda c: -times.get(c, 150.0)):
     def cost(g):
         new = sum(size[t] for t in need - g["tars"]) / (a.mbps * 1e6)
         return g["t"] + tc + new
-    g = min(groups, key=cost)
+    cap = a.max_gib * 2 ** 30
+
+    def gib(g):
+        return sum(size[t] for t in g["tars"] | need)
+    fits = [g for g in groups if gib(g) <= cap]
+    # the job that ends earliest with it among those whose data still fit the disk; else the one with the least data
+    g = min(fits, key=cost) if fits else min(groups, key=gib)
     g["t"] = cost(g)
     g["cases"].append(c)
     g["tars"] |= need
