@@ -69,7 +69,7 @@ if a.times and os.path.exists(a.times):
 
 # the CPU cases: FP64 (cpu_dp) and FP32 (cpu_sp, against WRF real*4; job.sh passes --cpu-sp when it built one)
 allcases = [c[0] for c in w.CASES if c[1] in ("cpu_dp", "cpu_sp") and (a.slow or not w.slow(c[3]))]
-allcases += ["straka_wrf"] + [f"restart_{t}_fp64" for t, _, _ in w.RESTARTS]
+allcases += (["straka_wrf"] if "straka_wrf" in w.SPECIAL else []) + [f"restart_{t}_fp64" for t, _, _ in w.RESTARTS]  # straka_wrf: up to 1.3.0
 if a.cases:
     cases = [c for c in a.cases.split(",") if c]
     bad = [c for c in cases if c not in [x[0] for x in w.CASES] + w.SPECIAL]
