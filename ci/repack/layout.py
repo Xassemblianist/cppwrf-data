@@ -121,7 +121,7 @@ import wrf_suite as w  # noqa: E402
 
 cons = {}
 allcases = [c[0] for c in w.CASES if c[1] == "cpu_dp" and not w.slow(c[3])]
-allcases += ["straka_wrf"] + [f"restart_{t}_fp64" for t, _, _ in w.RESTARTS]
+allcases += (["straka_wrf"] if "straka_wrf" in w.SPECIAL else []) + [f"restart_{t}_fp64" for t, _, _ in w.RESTARTS]
 for c in allcases:
     cons["case:" + c] = needs.case_entries(a.src, c, idx)
 for c in [c[0] for c in w.CASES if c[1] != "cpu_dp" or w.slow(c[3])]:  # the GPU / slow cases: where they read nothing else
