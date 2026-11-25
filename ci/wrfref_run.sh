@@ -35,19 +35,23 @@ case $mode in
     serial=$data/wrf/wrf_r8.exe
     test -x "$serial"
     pids=()
-    for build in serial r8dm r8dmmove; do
+    for build in serial $BUILDS; do
       exe=$wrf/wrf_$build.exe
       [ "$build" != serial ] || exe=$serial
+      # a vortex-following build moves its nests at every parent step: time_to_move (minutes) beyond the run keeps
+      # d02 in place (time_for_move returns before the vortex search)
+      hold=()
+      case $build in *vortex) hold=(domains.time_to_move=0,99999) ;; esac
       python3 "$runner" "$data/runs" "$runs" "$exe" "$build" run_N3s_r8 \
         time_control.run_seconds=600 time_control.history_interval_s=60,60 domains.num_moves=0 run.steps=0 \
-        > "$out/repro-$build.log" 2>&1 &
+        "${hold[@]}" > "$out/repro-$build.log" 2>&1 &
       pids+=("$!")
     done
     failed=0
     for pid in "${pids[@]}"; do wait "$pid" || failed=1; done
     cat "$out"/repro-*.log
     if [ "$failed" = 1 ]; then echo 'REPRO FAILED (WRF run)' | tee "$out/repro.log"; exit 1; fi
-    python3 "$here/wrfref_repro.py" "$runs" 2>&1 | tee "$out/repro.log"
+    python3 "$here/wrfref_repro.py" "$runs" $BUILDS 2>&1 | tee "$out/repro.log"
     exit ;;
   refs) ;;
   *) exit 2 ;;
@@ -105,10 +109,12 @@ dirs=()
 while read -r name base fl sets; do
   dirs+=("run_$name")
   case $fl in
-    *dmmove) for d in "$runs/run_$name" "$runs/run_$name/steps"; do
+    *dmmove|*dmvortex) for d in "$runs/run_$name" "$runs/run_$name/steps"; do
       [ -d "$d" ] || continue
       echo "== ${d#"$runs/"}"
-      grep -hE '^ *moving|Grid +[0-9]+ New SW corner|MOAD can not move' "$d"/rsl.error.0000 "$d"/wrf.log || true
+      # vortex following also prints the centre it found (ATCF), the centre and the move per parent step
+      grep -hE '^ *moving|Grid +[0-9]+ New SW corner|MOAD can not move|^ATCF|vortex center|grid +center|disp +:|move \(rel cd\)' \
+        "$d"/rsl.error.0000 "$d"/wrf.log || true
     done >> "$out/moves.log" ;;
   esac
 done < "$job/refs.txt"

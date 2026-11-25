@@ -6,10 +6,13 @@ import re
 import sys
 from pathlib import Path
 
-FLAVORS = ("r8", "r8d8", "r4", "r8dm", "r8dmmove", "r4dmmove")
+FLAVORS = ("r8", "r8d8", "r4", "r8dm", "r8dmmove", "r4dmmove", "r8dmvortex", "r4dmvortex")
 ALIASES = {f"wrf_{fl}.exe": fl for fl in FLAVORS}
-ALIASES.update({"wrf_r8_basic.exe": "r8dm", "wrf_r8_move.exe": "r8dmmove", "wrf_r4_move.exe": "r4dmmove"})
-MOVING = {"r8dmmove", "r4dmmove"}
+ALIASES.update({"wrf_r8_basic.exe": "r8dm", "wrf_r8_move.exe": "r8dmmove", "wrf_r4_move.exe": "r4dmmove",
+                "wrf_r8_vortex.exe": "r8dmvortex", "wrf_r4_vortex.exe": "r4dmvortex"})
+MOVING = {"r8dmmove", "r4dmmove", "r8dmvortex", "r4dmvortex"}
+# the -r8 build of each moving kind, which the N3 reproduction check runs against the serial build
+REPRO = {"r8dmmove": "r8dmmove", "r4dmmove": "r8dmmove", "r8dmvortex": "r8dmvortex", "r4dmvortex": "r8dmvortex"}
 
 
 def rows(text):
@@ -59,8 +62,9 @@ def main():
     if flavors is not None and {r[2] for r in refs} - set(flavors):
         cli.error("reference flavor missing from --flavors")
     moving = bool(set(flavors or ()) & MOVING)
-    if moving and not {"r8dm", "r8dmmove"}.issubset(flavors):
-        cli.error("moving builds require r8dm and r8dmmove for the N3 reproduction check")
+    repro = sorted({REPRO[f] for f in set(flavors or ()) & MOVING})
+    if moving and not {"r8dm", *repro}.issubset(flavors):
+        cli.error(f"moving builds require r8dm and {' and '.join(repro)} for the N3 reproduction check")
     restartable = [r[0] for r in refs if "run.steps=0" not in r[3:] and not r[2].endswith("dm")
                    and r[2] not in MOVING]
     restarts = {"": restartable, "none": []}.get(args.restart_refs, args.restart_refs.split(","))
@@ -70,7 +74,7 @@ def main():
         args.plan.mkdir(exist_ok=True)
         (args.plan / "restarts.txt").write_text("".join(f"{n}\n" for n in restarts))
         (args.plan / "outputs").write_text(
-            f"flavors={json.dumps(flavors)}\nmoving={str(moving).lower()}\n")
+            f"flavors={json.dumps(flavors)}\nmoving={str(moving).lower()}\nrepro={' '.join(repro)}\n")
     for ref in refs:
         print(" ".join(ref))
 

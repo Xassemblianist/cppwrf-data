@@ -12,7 +12,7 @@ on:
       data_tag: {description: "release of Xassemblianist/cppwrf-data", default: "data-v1"}
       src_ref: {description: "CPPWRF commit whose tools run the references", default: main}
       bundle: {description: "optional jobs release asset with the source commit at refs/heads/ci", default: ""}
-      flavors: {description: "space-separated builds (r8 r8d8 r4 r8dm r8dmmove r4dmmove)", default: "r8 r8d8"}
+      flavors: {description: "space-separated builds (r8 r8d8 r4 r8dm r8dmmove r4dmmove r8dmvortex r4dmvortex)", default: "r8 r8d8"}
       restart_refs: {description: "comma-separated names, none, or empty for all serial refs with steps", default: ""}
       resumed_restart_interval: {description: "optional checkpoint cadence in minutes for rsm refs", default: ""}
       portable: {description: "include the linked inputs and tables for standalone staging", type: boolean, default: false}

@@ -44,8 +44,10 @@ entries did not change, so a new data-v1 tar costs only its own packs), the plan
 - `.github/workflows/wrfref.yml`: WRF v4.8.0 built as the references were (`ci/wrf_build.sh`: `configure` option
   32, serial gfortran / gcc, basic nesting, `-r8`, and `-r8` with `-fdefault-double-8`; each build is kept as an
   asset of the `wrf-build` release). `r4` is serial real*4. The three MPICH builds use option 34: `r8dm`
-  with basic nesting, and `r8dmmove` and `r4dmmove` with preset moves. They run with one MPI rank.
-  A separate job checks the moving build against the serial N3 run before generating moving references.
+  with basic nesting, `r8dmmove` and `r4dmmove` with preset moves (nesting 2, `-DMOVE_NESTS`), and `r8dmvortex`
+  and `r4dmvortex` with vortex following (nesting 3, `-DMOVE_NESTS -DVORTEX_CENTER`). They run with one MPI rank.
+  A separate job checks the -r8 moving build of each kind requested against the serial N3 run (a vortex build with
+  `time_to_move` beyond the run, so that d02 stays) before generating moving references.
   The workflow also supports WRF reference runs of variant namelists on given data (CPPWRF's
   `tools/gcp/wrf_ref_run.py`; the run directories come back as assets of the `wrfref` release) and re-runs of
   existing references compared byte for byte (`ci/wrf_rerun.sh`; a different file variable by variable,

@@ -16,6 +16,7 @@ PORT_TARS = {
     "b04": ("port_b04_data.tar", "port_b04_files.tar"),
     "b13": ("port_b13_data.tar",),
     "b11": ("movenest_data.tar",),
+    "b11v": ("vortexnest_data.tar",),
 }
 PART_BYTES = 512 * 1024 * 1024
 

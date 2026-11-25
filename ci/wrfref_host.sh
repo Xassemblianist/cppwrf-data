@@ -18,7 +18,8 @@ git -C src checkout -q --detach "$SRC"
 git -C src log -1 --format='%H %s' | tee out/source.txt
 
 builds=$FLS
-if [ "$mode" = repro ]; then builds="r8dm r8dmmove"; fi
+# the reproduction job: r8dm and the -r8 build of each moving kind requested (wrfref_refs.py's plan)
+if [ "$mode" = repro ]; then builds="r8dm $(sed -n 's/^repro=//p' outputs)"; fi
 for fl in $builds; do
   asset=$(bash ci/ci/wrf_build_asset.sh "$fl")
   gh release download wrf-build -R "$CI_REPO" -p "${asset%% *}" -O - | zstd -dq | tar xf - -C wrf
