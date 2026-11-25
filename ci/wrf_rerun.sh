@@ -17,9 +17,9 @@ run_one() {
     b=$(basename "$f")
     case $b in wrfout_*|wrfrst_*|auxhist*|rsl.*|*.log|*.exe|namelist.output|steps) ;; *) [ -d "$f" ] || ln -s "$(readlink -f "$f")" "$R/$b" ;; esac
   done
-  ln -sfn "/w/wrf/WRF-4.8.0-$fl/main/wrf.exe" "$R/wrf.exe"
+  ln -sfn "/w/wrf/wrf_$fl.exe" "$R/wrf.exe"
   (cd "$R" && OMP_NUM_THREADS=1 ./wrf.exe > wrf.log 2>&1)
-  grep -q "SUCCESS COMPLETE WRF" "$R/wrf.log" || { echo "WRF-FAILED $dir $(tail -2 "$R/wrf.log" | tr '\n' ' ')"; return; }
+  grep -qs "SUCCESS COMPLETE WRF" "$R/wrf.log" "$R/rsl.error.0000" || { echo "WRF-FAILED $dir $(tail -2 "$R/wrf.log" | tr '\n' ' ')"; return; }
   for f in "$src"/wrfout_* "$src"/wrfrst_* "$src"/auxhist*; do
     [ -f "$f" ] || continue
     b=$(basename "$f")

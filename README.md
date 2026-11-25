@@ -43,11 +43,18 @@ entries did not change, so a new data-v1 tar costs only its own packs), the plan
   that made the references.
 - `.github/workflows/wrfref.yml`: WRF v4.8.0 built as the references were (`ci/wrf_build.sh`: `configure` option
   32, serial gfortran / gcc, basic nesting, `-r8`, and `-r8` with `-fdefault-double-8`; each build is kept as an
-  asset of the `wrf-build` release), WRF reference runs of variant namelists on given data (CPPWRF's
+  asset of the `wrf-build` release). `r4` is serial real*4. The three MPICH builds use option 34: `r8dm`
+  with basic nesting, and `r8dmmove` and `r4dmmove` with preset moves. They run with one MPI rank.
+  A separate job checks the moving build against the serial N3 run before generating moving references.
+  The workflow also supports WRF reference runs of variant namelists on given data (CPPWRF's
   `tools/gcp/wrf_ref_run.py`; the run directories come back as assets of the `wrfref` release) and re-runs of
   existing references compared byte for byte (`ci/wrf_rerun.sh`; a different file variable by variable,
   `ci/nc_same.py`). wrf.exe runs with CPPWRF's Intel vector log / log10 (`tests/phys/libmvec_intel.cpp`) preloaded:
   the references are Intel-made, and glibc's vector log differs on AMD CPUs.
+  Use `ci/wrfref_refs.py` to select and validate dispatch lines, and `ci/wrfref_bundle.sh` to prepare a local
+  CPPWRF commit for the `jobs` release. With `portable=true`, the reference assets include the input files and
+  tables needed by `ci/stage_port_refs.py`. The staging script makes data-v1 tar parts and updates the local
+  copies of SHA256SUMS, TARS.txt and INDEX.tsv.gz from the port's suite and files-test definitions.
 
 Start a suite run with CPPWRF's `tools/ci/ci_submit.sh` (see its header and CPPWRF's docs/USER_GUIDE.md); pushes to
 CPPWRF's main run the full suite through CPPWRF's `.github/workflows/wrf_suite.yml`, which calls `suite.yml`.
