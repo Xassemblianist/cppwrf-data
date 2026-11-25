@@ -29,6 +29,18 @@ for fl in $BUILDS; do
     *) ln -sfn "$exe" "$wrf/wrf_$fl.exe" ;;
   esac
 done
+# the vortex branch of time_for_move2 (share/mediation_nest_move.F:349-700) is compiled only with -DVORTEX_CENTER:
+# its message text is in a vortex build's executable and in no other
+for fl in $BUILDS; do
+  exe=$wrf/WRF-4.8.0-$fl/main/wrf.exe
+  if grep -aFq 'vortex center (in nest x and y)' "$exe"; then has=1; else has=0; fi
+  case $fl in *dmvortex) want=1 ;; *) want=0 ;; esac
+  if [ "$has" != "$want" ]; then
+    echo "BUILD CHECK FAILED: $fl: the vortex-following code is $([ "$has" = 1 ] && echo present || echo missing)" |
+      tee "$out/buildcheck.log"
+    exit 1
+  fi
+done
 runner=$job/src/tools/gcp/wrf_ref_run.py
 case $mode in
   repro)
@@ -115,9 +127,26 @@ while read -r name base fl sets; do
       # vortex following also prints the centre it found (ATCF), the centre and the move per parent step
       grep -hE '^ *moving|Grid +[0-9]+ New SW corner|MOAD can not move|^ATCF|vortex center|grid +center|disp +:|move \(rel cd\)' \
         "$d"/rsl.error.0000 "$d"/wrf.log || true
-    done >> "$out/moves.log" ;;
+    done >> "$out/moves.log"
+    # a moving reference must have moved: a "moving" line in each of its runs (and an ATCF line, the vortex search,
+    # in a vortex build's); otherwise nothing is published
+    for d in "$runs/run_$name" "$runs/run_$name/steps"; do
+      [ -d "$d" ] || continue
+      logs=()
+      for f in "$d"/rsl.error.0000 "$d"/wrf.log; do [ ! -f "$f" ] || logs+=("$f"); done
+      [ "${#logs[@]}" -gt 0 ] || logs=(/dev/null)
+      if ! grep -qE '^ *moving +[0-9]+' "${logs[@]}"; then
+        echo "MOVES FAILED ${d#"$runs/"}: no move" | tee -a "$out/moves.log"; moves_failed=1
+      fi
+      case $fl in *dmvortex)
+        if ! grep -q '^ATCF' "${logs[@]}"; then
+          echo "MOVES FAILED ${d#"$runs/"}: no vortex search (ATCF)" | tee -a "$out/moves.log"; moves_failed=1
+        fi ;;
+      esac
+    done ;;
   esac
 done < "$job/refs.txt"
+if [ "${moves_failed:-0}" = 1 ]; then cat "$out/moves.log"; exit 1; fi
 for name in "${restarts[@]}"; do dirs+=("rst_$name" "rsm_$name"); done
 shopt -s nullglob
 for d in "$runs"/base_*; do [ ! -d "$d" ] || dirs+=("${d##*/}"); done
