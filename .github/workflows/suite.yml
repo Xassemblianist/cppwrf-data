@@ -109,7 +109,7 @@ jobs:
           restore-keys: ccache-cpu-
       - name: build (Debian 13 container)
         run: docker run --rm -v "$GITHUB_WORKSPACE:/w" "${{ needs.prep.outputs.image }}" bash /w/ci/ci/job.sh build
-      - run: sudo chown -R "$(id -u)" . ; cat out/setup.out out/versions.txt; tail -3 out/cmake.log; tail -3 out/cmake_sp.log 2>/dev/null || true
+      - run: sudo chown -R "$(id -u)" . ; cat out/setup.out out/versions.txt; tail -n 3 out/cmake.log; tail -n 3 out/cmake_sp.log 2>/dev/null || true
         if: always()
       - uses: actions/upload-artifact@v4
         # out/versions.txt keeps the artifact's root at the workspace (build/cppwrf, build_sp/cppwrf) when build_sp is absent
@@ -157,7 +157,7 @@ jobs:
         run: |
           sudo chown -R "$(id -u)" out .ccache 2>/dev/null || true
           cat out/setup.out 2>/dev/null; cat out/versions.txt out/data.txt 2>/dev/null
-          grep -hE "^(SUITE|PASS|FAIL|SKIP|exit)" out/*.log 2>/dev/null | tail -60 || true
+          grep -hE "^(SUITE|PASS|FAIL|SKIP|exit)" out/*.log 2>/dev/null | tail -n 60 || true
           df -h /
       - uses: actions/cache/save@v4
         if: always() && matrix.kind == 'diff'

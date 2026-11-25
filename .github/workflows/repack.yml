@@ -58,7 +58,7 @@ jobs:
             bash ci/repack/stream_tar.sh "$t" |
               python3 -I ci/repack/repack.py "$t" plan/repack.tsv out --hardlinks plan/hardlinks.tsv \
                 --work "$RUNNER_TEMP/packs" --disk $((6 << 30)) || { echo "FAILED $t"; exit 1; }
-            echo "$t $((SECONDS - t0)) s"; df -h / | tail -1
+            echo "$t $((SECONDS - t0)) s"; df -h / | tail -n 1
           done
       - uses: actions/upload-artifact@v4
         if: always()

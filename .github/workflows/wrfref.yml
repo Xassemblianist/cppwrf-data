@@ -73,7 +73,7 @@ jobs:
           }
           if has_asset; then echo "$name exists"; exit 0; fi
           mkdir -p out
-          trap 'sudo chown -R "$(id -u):$(id -g)" out; tail -30 out/*.log' EXIT
+          trap 'sudo chown -R "$(id -u):$(id -g)" out; tail -n 30 out/*.log' EXIT
           docker run --rm -v "$GITHUB_WORKSPACE:/w" -e FL -e "RECIPE=$recipe" -e "ASSET=$name" debian:13 bash -e -o pipefail -c '
             dest=/w/wrf/WRF-4.8.0-$FL
             rc=0

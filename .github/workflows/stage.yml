@@ -41,7 +41,7 @@ jobs:
             [ -n "$parts" ] || { echo "no assets $p"; exit 1; }
             for a in $parts; do gh release download wrfref -R "$R" -p "$a" -O - ; done | tar xf - -C x
             for d in $(ls x); do echo "$d" | grep -qE "$DROP" && rm -rf "x/$d"; done
-            df -h / | tail -1
+            df -h / | tail -n 1
           done
           ls x
       - name: pack and upload
@@ -90,7 +90,7 @@ jobs:
             split -b 512M -d -a 3 --filter='bash part.sh "$FILE"' - "$T.part"
           for i in $(seq 600); do grep -q '^SUMMARY' "out/$T.txt" 2>/dev/null && [ -s out/sha ] && [ -s out/size ] && break; sleep 2; done
           echo "$T $(cat out/size) $(cat out/sha) $(wc -l < out/$T.parts)" > out/$T.tar
-          cat out/pack.log out/$T.tar; tail -1 out/$T.txt
+          cat out/pack.log out/$T.tar; tail -n 1 out/$T.txt
           grep -q "hits_text=0 hits_binary=0 hits_netcdf=0 hits_symlink=0 hits_name=0" out/$T.txt
       - uses: actions/upload-artifact@v4
         if: always()

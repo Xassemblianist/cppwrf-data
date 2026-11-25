@@ -47,7 +47,7 @@ jobs:
             bash ci/repack/stream_tar.sh "$t" | tee >(sha256sum | cut -d' ' -f1 > sha) |
               python3 -I ci/repack/scan.py "$t" >> "out/scan_$G.tsv" || { echo "FAILED $t"; exit 1; }
             for i in $(seq 60); do [ -s sha ] && break; sleep 1; done
-            echo "$t $(tail -1 "out/scan_$G.tsv" | cut -f4) $(cat sha) $((SECONDS - t0))" | tee -a "out/tars_$G.txt"
+            echo "$t $(tail -n 1 "out/scan_$G.tsv" | cut -f4) $(cat sha) $((SECONDS - t0))" | tee -a "out/tars_$G.txt"
             rm -f sha
           done
       - uses: actions/upload-artifact@v4
