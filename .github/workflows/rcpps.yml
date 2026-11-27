@@ -1,0 +1,19 @@
+# Exhaustive rcpps / rsqrtps fingerprints of the runner CPUs (Intel vs AMD generations).
+name: rcpps
+on: workflow_dispatch
+jobs:
+  rcpps:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-22.04, ubuntu-24.04-arm]
+        n: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        exclude:
+          - os: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: fingerprint
+        run: |
+          lscpu | grep -E "Model name|Vendor ID|CPU family|Model:|Stepping" | sed 's/  */ /g'
+          gcc -O2 -msse -o rcpps_hash probe/rcpps_hash.c && ./rcpps_hash
