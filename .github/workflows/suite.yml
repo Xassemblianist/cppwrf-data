@@ -124,7 +124,7 @@ jobs:
     timeout-minutes: 345
     strategy:
       fail-fast: false
-      max-parallel: 38
+      max-parallel: 20  # owner 2026-11-28: GitHub runners shared 20/20 with CPPMPAS
       matrix: ${{ fromJSON(needs.prep.outputs.matrix) }}
     name: ${{ matrix.name }}
     steps:
