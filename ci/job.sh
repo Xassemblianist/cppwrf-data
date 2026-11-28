@@ -29,6 +29,8 @@ build() {  # the CPU FP64 binary as suite_body.sh builds it (-march=skylake: the
   cmake -S $W/src -B $W/build -DCMAKE_BUILD_TYPE=Release -DCPPWRF_DOUBLE=ON -DCPPWRF_ENABLE_CUDA=OFF -DCPPWRF_NATIVE=OFF \
     -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_FLAGS="-march=skylake -mtune=skylake" "$@" > $O/cmake.log 2>&1 &&
     cmake --build $W/build -j"$(nproc)" --target cppwrf >> $O/cmake.log 2>&1 || { echo "BUILD_FAILED (cmake.log)" >> $O/setup.out; return 1; }
+  # cppwrf_real for the cppwrf-run cases that start from met_em files (a source without the target skips it)
+  cmake --build $W/build -j"$(nproc)" --target cppwrf_real >> $O/cmake.log 2>&1 || echo "no cppwrf_real target" >> $O/cmake.log
   ccache -s >> $O/cmake.log 2>&1
 }
 build_sp() {  # the CPU FP32 binary (the cpu_sp cases), same flags, CPPWRF_DOUBLE=OFF; a source without cpu_sp cases
